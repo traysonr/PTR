@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, ScrollView, Alert, ActivityIndicator, View } from 'react-native';
 import { router } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -7,75 +7,124 @@ import { Button } from '@/components/Button';
 import { Checkbox } from '@/components/Checkbox';
 import { TextInput } from '@/components/TextInput';
 import { useProfile } from '@/hooks/useProfile';
-import { BodyPart, Goal, Intensity } from '@/types';
+import { useRoutines } from '@/hooks/useRoutines';
+import { BodyArea, Intensity, Equipment } from '@/types/exercise';
 import { storageService } from '@/services/storage';
 
-const BODY_PARTS: BodyPart[] = ['neck', 'lower-back', 'shoulders', 'knees', 'hips', 'ankles'];
-const GOALS: Goal[] = ['pain-reduction', 'strength', 'mobility', 'post-surgery-rehab'];
-const INTENSITIES: Intensity[] = ['light', 'moderate', 'high'];
+const BODY_AREAS: BodyArea[] = [
+  'neck',
+  'upper_back',
+  'lower_back',
+  'shoulder',
+  'hip',
+  'knee',
+  'ankle',
+  'wrist',
+  'elbow',
+  'core',
+];
 
-const bodyPartLabels: Record<BodyPart, string> = {
+const INTENSITIES: Intensity[] = ['low', 'medium', 'high'];
+
+const EQUIPMENT: Equipment[] = [
+  'none',
+  'dumbbells',
+  'exercise_ball',
+  'resistance_band',
+  'chair',
+  'step',
+  'foam_roll',
+];
+
+const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6, 7];
+const MINUTES_PER_DAY_OPTIONS = [15, 20, 30, 45, 60];
+
+const bodyAreaLabels: Record<BodyArea, string> = {
   neck: 'Neck',
-  'lower-back': 'Lower Back',
-  shoulders: 'Shoulders',
-  knees: 'Knees',
-  hips: 'Hips',
-  ankles: 'Ankles',
-};
-
-const goalLabels: Record<Goal, string> = {
-  'pain-reduction': 'Pain Reduction',
-  strength: 'Strength',
-  mobility: 'Mobility',
-  'post-surgery-rehab': 'Post-Surgery Rehab',
+  upper_back: 'Upper Back',
+  lower_back: 'Lower Back',
+  shoulder: 'Shoulder',
+  hip: 'Hip',
+  knee: 'Knee',
+  ankle: 'Ankle',
+  wrist: 'Wrist',
+  elbow: 'Elbow',
+  core: 'Core',
 };
 
 const intensityLabels: Record<Intensity, string> = {
-  light: 'Light',
-  moderate: 'Moderate',
+  low: 'Low',
+  medium: 'Medium',
   high: 'High',
+};
+
+const equipmentLabels: Record<Equipment, string> = {
+  none: 'None',
+  dumbbells: 'Dumbbells',
+  exercise_ball: 'Exercise Ball',
+  resistance_band: 'Resistance Band',
+  chair: 'Chair',
+  step: 'Step',
+  foam_roll: 'Foam Roll',
 };
 
 export default function OnboardingScreen() {
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
-  const [painAreas, setPainAreas] = useState<BodyPart[]>([]);
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [preferredIntensity, setPreferredIntensity] = useState<Intensity | null>(null);
+  const [targetBodyAreas, setTargetBodyAreas] = useState<BodyArea[]>([]);
+  const [intensityMin, setIntensityMin] = useState<Intensity | null>(null);
+  const [intensityMax, setIntensityMax] = useState<Intensity | null>(null);
+  const [equipmentAccess, setEquipmentAccess] = useState<Equipment[]>([]);
+  const [daysPerWeek, setDaysPerWeek] = useState<number | null>(null);
+  const [maxMinutesPerDay, setMaxMinutesPerDay] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const { saveProfile } = useProfile();
+  const { createRoutineFromProfile } = useRoutines();
 
-  const togglePainArea = (area: BodyPart) => {
-    setPainAreas((prev) =>
+  const toggleBodyArea = (area: BodyArea) => {
+    setTargetBodyAreas((prev) =>
       prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]
     );
   };
 
-  const toggleGoal = (goal: Goal) => {
-    setGoals((prev) =>
-      prev.includes(goal) ? prev.filter((g) => g !== goal) : [...prev, goal]
+  const toggleEquipment = (equipment: Equipment) => {
+    setEquipmentAccess((prev) =>
+      prev.includes(equipment)
+        ? prev.filter((e) => e !== equipment)
+        : [...prev, equipment]
     );
   };
 
-  const handleNext = () => {
-    if (step === 1 && !name.trim()) {
+  const validateStep = (currentStep: number): boolean => {
+    if (currentStep === 1 && !name.trim()) {
       Alert.alert('Name Required', 'Please enter your name or nickname.');
-      return;
+      return false;
     }
-    if (step === 2 && painAreas.length === 0) {
-      Alert.alert('Selection Required', 'Please select at least one area of focus.');
-      return;
+    if (currentStep === 2 && targetBodyAreas.length === 0) {
+      Alert.alert('Selection Required', 'Please select at least one target body area.');
+      return false;
     }
-    if (step === 3 && goals.length === 0) {
-      Alert.alert('Selection Required', 'Please select at least one goal.');
-      return;
+    if (currentStep === 3 && (!intensityMin || !intensityMax)) {
+      Alert.alert('Selection Required', 'Please select both minimum and maximum intensity.');
+      return false;
     }
-    if (step === 4 && !preferredIntensity) {
-      Alert.alert('Selection Required', 'Please select your preferred intensity.');
+    if (currentStep === 4 && equipmentAccess.length === 0) {
+      Alert.alert('Selection Required', 'Please select at least one equipment option (including "None").');
+      return false;
+    }
+    if (currentStep === 5 && (!daysPerWeek || !maxMinutesPerDay)) {
+      Alert.alert('Selection Required', 'Please select both days per week and minutes per day.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleNext = () => {
+    if (!validateStep(step)) {
       return;
     }
 
-    if (step < 4) {
+    if (step < 5) {
       setStep(step + 1);
     } else {
       handleComplete();
@@ -83,15 +132,30 @@ export default function OnboardingScreen() {
   };
 
   const handleComplete = async () => {
+    if (!validateStep(5)) {
+      return;
+    }
+
     setLoading(true);
     try {
       const now = new Date().toISOString();
+      
+      // Ensure equipment includes 'none' if no other equipment is selected
+      const finalEquipment = equipmentAccess.length === 0 ? ['none'] : equipmentAccess;
+      if (!finalEquipment.includes('none') && finalEquipment.length > 0) {
+        finalEquipment.push('none'); // Always include 'none' as fallback
+      }
+
       const profile = {
-        id: `user-${Date.now()}`,
+        id: 'default',
         name: name.trim(),
-        painAreas,
-        goals,
-        preferredIntensity: preferredIntensity!,
+        targetBodyAreas,
+        intensityMin: intensityMin!,
+        intensityMax: intensityMax!,
+        equipmentAccess: finalEquipment,
+        daysPerWeek: daysPerWeek!,
+        maxMinutesPerDay: maxMinutesPerDay!,
+        maxMinutesPerWeek: daysPerWeek! * maxMinutesPerDay!,
         createdAt: now,
         updatedAt: now,
       };
@@ -99,9 +163,20 @@ export default function OnboardingScreen() {
       const success = await saveProfile(profile);
       if (success) {
         await storageService.setOnboardingComplete(true);
-        // Request notification permissions after onboarding
-        // TODO: This will be handled in the notification hook when first scheduling
-        router.replace('/(tabs)');
+        
+        // Auto-generate routine from profile
+        try {
+          const routine = await createRoutineFromProfile(profile);
+          // Navigate to routines tab to review the generated routine
+          router.replace('/(tabs)/routines');
+        } catch (routineError) {
+          console.error('Error creating routine:', routineError);
+          Alert.alert(
+            'Routine Creation Error',
+            'Profile saved, but routine generation failed. You can generate a routine later from the Routines tab.'
+          );
+          router.replace('/(tabs)/routines');
+        }
       } else {
         Alert.alert('Error', 'Failed to save profile. Please try again.');
       }
@@ -120,9 +195,10 @@ export default function OnboardingScreen() {
           Welcome to PTR
         </ThemedText>
         <ThemedText style={styles.subtitle}>
-          Let's set up your profile to personalize your physical therapy journey.
+          Let's create your personalized physical therapy routine.
         </ThemedText>
 
+        {/* Step 1: Name */}
         {step === 1 && (
           <ThemedView style={styles.step}>
             <ThemedText type="subtitle" style={styles.stepTitle}>
@@ -137,60 +213,121 @@ export default function OnboardingScreen() {
           </ThemedView>
         )}
 
+        {/* Step 2: Target Body Areas */}
         {step === 2 && (
           <ThemedView style={styles.step}>
             <ThemedText type="subtitle" style={styles.stepTitle}>
-              Which areas need focus?
+              Target Body Areas
             </ThemedText>
             <ThemedText style={styles.stepDescription}>
-              Select all areas where you experience pain or want to focus on.
+              Select all body areas you want to focus on. We recommend emphasizing: Neck, Upper Back, Lower Back, Hip, Shoulder, Core, Knee.
             </ThemedText>
-            {BODY_PARTS.map((area) => (
+            {BODY_AREAS.map((area) => (
               <Checkbox
                 key={area}
-                label={bodyPartLabels[area]}
-                checked={painAreas.includes(area)}
-                onToggle={() => togglePainArea(area)}
+                label={bodyAreaLabels[area]}
+                checked={targetBodyAreas.includes(area)}
+                onToggle={() => toggleBodyArea(area)}
               />
             ))}
           </ThemedView>
         )}
 
+        {/* Step 3: Intensity Range */}
         {step === 3 && (
           <ThemedView style={styles.step}>
             <ThemedText type="subtitle" style={styles.stepTitle}>
-              What are your goals?
+              Intensity Range
             </ThemedText>
             <ThemedText style={styles.stepDescription}>
-              Select all goals that apply to you.
+              Select your preferred intensity range. The app will choose exercises within this range.
             </ThemedText>
-            {GOALS.map((goal) => (
+            <ThemedText style={styles.subSectionTitle}>Minimum Intensity</ThemedText>
+            {INTENSITIES.map((intensity) => (
               <Checkbox
-                key={goal}
-                label={goalLabels[goal]}
-                checked={goals.includes(goal)}
-                onToggle={() => toggleGoal(goal)}
+                key={`min-${intensity}`}
+                label={intensityLabels[intensity]}
+                checked={intensityMin === intensity}
+                onToggle={() => setIntensityMin(intensity)}
+              />
+            ))}
+            <ThemedText style={[styles.subSectionTitle, { marginTop: 24 }]}>
+              Maximum Intensity
+            </ThemedText>
+            {INTENSITIES.map((intensity) => (
+              <Checkbox
+                key={`max-${intensity}`}
+                label={intensityLabels[intensity]}
+                checked={intensityMax === intensity}
+                onToggle={() => setIntensityMax(intensity)}
+              />
+            ))}
+            {intensityMin && intensityMax && (
+              <ThemedText style={styles.validationHint}>
+                Selected range: {intensityLabels[intensityMin]} to {intensityLabels[intensityMax]}
+              </ThemedText>
+            )}
+          </ThemedView>
+        )}
+
+        {/* Step 4: Equipment Access */}
+        {step === 4 && (
+          <ThemedView style={styles.step}>
+            <ThemedText type="subtitle" style={styles.stepTitle}>
+              Equipment Access
+            </ThemedText>
+            <ThemedText style={styles.stepDescription}>
+              Select all equipment you have access to. The app will prioritize exercises using your available equipment.
+            </ThemedText>
+            {EQUIPMENT.map((equipment) => (
+              <Checkbox
+                key={equipment}
+                label={equipmentLabels[equipment]}
+                checked={equipmentAccess.includes(equipment)}
+                onToggle={() => toggleEquipment(equipment)}
               />
             ))}
           </ThemedView>
         )}
 
-        {step === 4 && (
+        {/* Step 5: Time Availability */}
+        {step === 5 && (
           <ThemedView style={styles.step}>
             <ThemedText type="subtitle" style={styles.stepTitle}>
-              Preferred Intensity
+              Time Availability
             </ThemedText>
             <ThemedText style={styles.stepDescription}>
-              What level of intensity are you comfortable with?
+              How many days per week can you exercise, and how much time per day?
             </ThemedText>
-            {INTENSITIES.map((intensity) => (
-              <Checkbox
-                key={intensity}
-                label={intensityLabels[intensity]}
-                checked={preferredIntensity === intensity}
-                onToggle={() => setPreferredIntensity(intensity)}
-              />
-            ))}
+            <ThemedText style={styles.subSectionTitle}>Days Per Week</ThemedText>
+            <View style={styles.optionsGrid}>
+              {DAYS_PER_WEEK_OPTIONS.map((days) => (
+                <Checkbox
+                  key={`days-${days}`}
+                  label={`${days} ${days === 1 ? 'day' : 'days'}`}
+                  checked={daysPerWeek === days}
+                  onToggle={() => setDaysPerWeek(days)}
+                />
+              ))}
+            </View>
+            <ThemedText style={[styles.subSectionTitle, { marginTop: 24 }]}>
+              Maximum Minutes Per Day
+            </ThemedText>
+            <View style={styles.optionsGrid}>
+              {MINUTES_PER_DAY_OPTIONS.map((minutes) => (
+                <Checkbox
+                  key={`minutes-${minutes}`}
+                  label={`${minutes} minutes`}
+                  checked={maxMinutesPerDay === minutes}
+                  onToggle={() => setMaxMinutesPerDay(minutes)}
+                />
+              ))}
+            </View>
+            {daysPerWeek && maxMinutesPerDay && (
+              <ThemedText style={styles.validationHint}>
+                Weekly target: ~{daysPerWeek * maxMinutesPerDay} minutes across {daysPerWeek} days
+              </ThemedText>
+            )}
           </ThemedView>
         )}
 
@@ -204,7 +341,7 @@ export default function OnboardingScreen() {
             />
           )}
           <Button
-            title={step === 4 ? 'Complete' : 'Next'}
+            title={step === 5 ? 'Complete Setup' : 'Next'}
             onPress={handleNext}
             loading={loading}
             style={styles.nextButton}
@@ -212,7 +349,7 @@ export default function OnboardingScreen() {
         </ThemedView>
 
         <ThemedView style={styles.progressContainer}>
-          {[1, 2, 3, 4].map((s) => (
+          {[1, 2, 3, 4, 5].map((s) => (
             <ThemedView
               key={s}
               style={[styles.progressDot, s <= step && styles.progressDotActive]}
@@ -255,6 +392,21 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     opacity: 0.7,
   },
+  subSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  optionsGrid: {
+    gap: 8,
+  },
+  validationHint: {
+    marginTop: 12,
+    fontSize: 14,
+    opacity: 0.6,
+    fontStyle: 'italic',
+  },
   buttonContainer: {
     flexDirection: 'row',
     gap: 12,
@@ -282,4 +434,3 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
   },
 });
-

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { UserProfile, ScheduledSession, WeekPlan } from '@/types';
+import { UserProfile, ScheduledSession, WeekPlan, Routine } from '@/types';
 
 // Storage Keys
 const STORAGE_KEYS = {
@@ -7,6 +7,8 @@ const STORAGE_KEYS = {
   SCHEDULED_SESSIONS: '@ptr:scheduled_sessions',
   WEEK_PLANS: '@ptr:week_plans',
   ACTIVE_WEEK_PLAN: '@ptr:active_week_plan',
+  ROUTINES: '@ptr:routines',
+  ACTIVE_ROUTINE_ID: '@ptr:active_routine_id',
   ONBOARDING_COMPLETE: '@ptr:onboarding_complete',
   NOTIFICATIONS_ENABLED: '@ptr:notifications_enabled',
 } as const;
@@ -39,6 +41,16 @@ export const storageService = {
     } catch (error) {
       console.error('Error deleting profile:', error);
       throw error;
+    }
+  },
+
+  async hasProfile(): Promise<boolean> {
+    try {
+      const profile = await this.getProfile();
+      return profile !== null;
+    } catch (error) {
+      console.error('Error checking profile:', error);
+      return false;
     }
   },
 
@@ -221,6 +233,83 @@ export const storageService = {
     }
   },
 
+  // Routines Operations
+  async saveRoutine(routine: Routine): Promise<void> {
+    try {
+      const routines = await this.getRoutines();
+      const index = routines.findIndex((r) => r.id === routine.id);
+      if (index >= 0) {
+        routines[index] = routine;
+      } else {
+        routines.push(routine);
+      }
+      await AsyncStorage.setItem(STORAGE_KEYS.ROUTINES, JSON.stringify(routines));
+    } catch (error) {
+      console.error('Error saving routine:', error);
+      throw error;
+    }
+  },
+
+  async getRoutines(): Promise<Routine[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.ROUTINES);
+      return data ? JSON.parse(data) : [];
+    } catch (error) {
+      console.error('Error getting routines:', error);
+      return [];
+    }
+  },
+
+  async getRoutineById(routineId: string): Promise<Routine | null> {
+    try {
+      const routines = await this.getRoutines();
+      return routines.find((r) => r.id === routineId) || null;
+    } catch (error) {
+      console.error('Error getting routine:', error);
+      return null;
+    }
+  },
+
+  async getActiveRoutineId(): Promise<string | null> {
+    try {
+      const activeId = await AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_ROUTINE_ID);
+      return activeId || null;
+    } catch (error) {
+      console.error('Error getting active routine ID:', error);
+      return null;
+    }
+  },
+
+  async setActiveRoutineId(routineId: string | null): Promise<void> {
+    try {
+      if (routineId) {
+        await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_ROUTINE_ID, routineId);
+      } else {
+        await AsyncStorage.removeItem(STORAGE_KEYS.ACTIVE_ROUTINE_ID);
+      }
+    } catch (error) {
+      console.error('Error setting active routine ID:', error);
+      throw error;
+    }
+  },
+
+  async deleteRoutine(routineId: string): Promise<void> {
+    try {
+      const routines = await this.getRoutines();
+      const filtered = routines.filter((r) => r.id !== routineId);
+      await AsyncStorage.setItem(STORAGE_KEYS.ROUTINES, JSON.stringify(filtered));
+
+      // If this was the active routine, clear it
+      const activeId = await this.getActiveRoutineId();
+      if (activeId === routineId) {
+        await this.setActiveRoutineId(null);
+      }
+    } catch (error) {
+      console.error('Error deleting routine:', error);
+      throw error;
+    }
+  },
+
   // Clear all data (useful for development/reset)
   async clearAll(): Promise<void> {
     try {
@@ -231,4 +320,27 @@ export const storageService = {
     }
   },
 };
+
+/**
+ * Reset app to onboarding state - clears all user data and returns to onboarding
+ * Developer tool for testing the onboarding flow
+ */
+export async function resetAppForOnboarding(): Promise<void> {
+  try {
+    // Clear everything relevant to onboarding + routines/weekly plans
+    await AsyncStorage.multiRemove([
+      '@ptr:profile',
+      '@ptr:onboarding_complete',
+      '@ptr:routines',
+      '@ptr:active_routine_id',
+      '@ptr:scheduled_sessions',
+      '@ptr:week_plans',
+      '@ptr:active_week_plan',
+      '@ptr:notifications_enabled',
+    ]);
+  } catch (e) {
+    console.error('Failed to reset app for onboarding:', e);
+    throw e;
+  }
+}
 

@@ -24,10 +24,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="catalog"
+        name="routines"
         options={{
-          title: 'Exercises',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="list.bullet" color={color} />,
+          title: 'Routines',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="list.clipboard" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -49,6 +49,12 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="catalog"
+        options={{
+          href: null, // Hide from tab bar but keep route accessible (moved to Settings)
         }}
       />
       <Tabs.Screen

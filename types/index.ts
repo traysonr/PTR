@@ -1,32 +1,28 @@
 // User Profile Types
-export type BodyPart = 
-  | 'neck' 
-  | 'lower-back' 
-  | 'shoulders' 
-  | 'knees' 
-  | 'hips' 
-  | 'ankles';
+// Note: BodyPart, Goal (old profile goal), Intensity (old profile intensity) are deprecated
+// New profile uses BodyArea, ExerciseGoal, ExerciseIntensity from exercise.ts
 
-export type Goal = 
-  | 'pain-reduction' 
-  | 'strength' 
-  | 'mobility' 
-  | 'post-surgery-rehab';
-
-export type Intensity = 'light' | 'moderate' | 'high';
+import { BodyArea, Intensity, Equipment } from './exercise';
 
 export interface UserProfile {
-  id: string;
+  id: string; // e.g. 'default'
   name: string;
-  painAreas: BodyPart[];
-  goals: Goal[];
-  preferredIntensity: Intensity;
-  createdAt: string;
-  updatedAt: string;
+  targetBodyAreas: BodyArea[]; // Use BodyArea from exercise types
+  intensityMin: Intensity; // 'low' | 'medium' | 'high'
+  intensityMax: Intensity;
+  equipmentAccess: Equipment[]; // subset of the Exercise equipment union
+  daysPerWeek: number; // e.g. 2–7
+  maxMinutesPerDay: number; // e.g. 20, 30, 45
+  maxMinutesPerWeek?: number; // optional, default = daysPerWeek * maxMinutesPerDay
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
 }
 
 // Exercise Types - Re-export from exercise.ts
 export { Exercise, BodyArea, Intensity as ExerciseIntensity, Goal as ExerciseGoal, Equipment } from './exercise';
+
+// Routine Types - Re-export from routine.ts
+export { Routine, RoutineExerciseSlot } from './routine';
 
 // Scheduled Session Types
 export interface ScheduledSession {

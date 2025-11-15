@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { WeekPlan, ScheduleStyle, ScheduledSession } from '@/types';
+import { Routine } from '@/types';
 import { Exercise } from '@/types/exercise';
 import { storageService } from '@/services/storage';
 
@@ -183,11 +184,69 @@ export function useWeekPlans() {
     []
   );
 
+  /**
+   * Convert a Routine to a WeekPlan
+   */
+  const createWeekPlanFromRoutine = useCallback(
+    async (routine: Routine, startDate: string): Promise<WeekPlan | null> => {
+      try {
+        setError(null);
+
+        // Calculate end date (7 days after start)
+        const start = new Date(startDate);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 6); // 7 days total (0-6 = 7 days)
+        const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+
+        // Convert routine slots to scheduled sessions
+        const scheduledSessions: ScheduledSession[] = routine.slots.map((slot) => {
+          const slotDate = new Date(start);
+          slotDate.setDate(start.getDate() + slot.dayIndex);
+          const dateString = `${slotDate.getFullYear()}-${String(slotDate.getMonth() + 1).padStart(2, '0')}-${String(slotDate.getDate()).padStart(2, '0')}`;
+
+          return {
+            id: `session-${slot.id}`,
+            exerciseId: slot.exerciseId,
+            date: dateString,
+            createdAt: new Date().toISOString(),
+          };
+        });
+
+        const now = new Date().toISOString();
+        const plan: WeekPlan = {
+          id: `plan-routine-${routine.id}-${Date.now()}`,
+          startDate,
+          endDate,
+          scheduleStyle: 'user-schedule', // Routine-based plans are user-scheduled
+          selectedExerciseIds: routine.exerciseIds,
+          dailyTimeWindow: {
+            minMinutes: Math.max(15, routine.maxMinutesPerDay - 10),
+            maxMinutes: routine.maxMinutesPerDay,
+          },
+          scheduledSessions,
+          completedSessions: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        await storageService.saveWeekPlan(plan);
+        await storageService.setActiveWeekPlan(plan.id);
+        setActivePlan(plan);
+        return plan;
+      } catch (err) {
+        setError(err instanceof Error ? err : new Error('Failed to create week plan from routine'));
+        return null;
+      }
+    },
+    []
+  );
+
   return {
     activePlan,
     loading,
     error,
     createWeekPlan,
+    createWeekPlanFromRoutine,
     updateWeekPlan,
     deleteWeekPlan,
     reloadActivePlan: loadActivePlan,

@@ -5,7 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/Button';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useScheduledExercises } from '@/hooks/useScheduledExercises';
-import { storageService } from '@/services/storage';
+import { storageService, resetAppForOnboarding } from '@/services/storage';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { TouchableOpacity } from 'react-native';
@@ -143,6 +143,29 @@ export default function SettingsScreen() {
           )}
         </ThemedView>
 
+        {/* Exercise Catalog Section */}
+        <ThemedView style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            Reference
+          </ThemedText>
+
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <ThemedText style={styles.settingLabel}>Exercise Catalog</ThemedText>
+              <ThemedText style={styles.settingDescription}>
+                Browse all available exercises with filters and search. Useful for reference when
+                creating or editing routines.
+              </ThemedText>
+            </View>
+            <Button
+              title="View Catalog"
+              onPress={() => router.push('/settings/exercise-catalog')}
+              variant="outline"
+              style={styles.catalogButton}
+            />
+          </View>
+        </ThemedView>
+
         {/* Data Management Section */}
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
@@ -198,6 +221,53 @@ export default function SettingsScreen() {
             💡 This app stores all data locally on your device. Future updates may include cloud
             sync and additional features.
           </ThemedText>
+        </ThemedView>
+
+        {/* Developer Tools */}
+        <ThemedView style={styles.section}>
+          <View style={styles.divider} />
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            Developer Tools
+          </ThemedText>
+          <ThemedText style={styles.devWarning}>
+            ⚠️ These tools are for development and testing only. Use with caution.
+          </ThemedText>
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <ThemedText style={styles.settingLabel}>Reset App</ThemedText>
+              <ThemedText style={styles.settingDescription}>
+                Clear all app data (profile, routines, scheduled exercises) and return to onboarding
+                screen. This action cannot be undone.
+              </ThemedText>
+            </View>
+            <Button
+              title="Reset App (Start Onboarding)"
+              onPress={async () => {
+                Alert.alert(
+                  'Reset App',
+                  'This will delete all your data and return you to onboarding. This cannot be undone. Continue?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Reset',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await resetAppForOnboarding();
+                          router.replace('/onboarding');
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to reset app. Please try again.');
+                          console.error(error);
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+              variant="danger"
+              style={styles.resetButton}
+            />
+          </View>
         </ThemedView>
       </ScrollView>
     </ThemedView>
@@ -306,6 +376,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     minWidth: 100,
   },
+  catalogButton: {
+    marginTop: 8,
+    minWidth: 100,
+  },
   aboutItem: {
     marginBottom: 16,
   },
@@ -323,6 +397,21 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     lineHeight: 20,
     fontStyle: 'italic',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginVertical: 24,
+  },
+  devWarning: {
+    fontSize: 13,
+    color: '#ff9500',
+    marginBottom: 16,
+    fontWeight: '500',
+  },
+  resetButton: {
+    marginTop: 8,
+    minWidth: 150,
   },
 });
 
