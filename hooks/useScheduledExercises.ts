@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ScheduledSession, Exercise, DaySchedule } from '@/types';
-import { storageService } from '@/services/storage';
 import exercisesData from '@/data/exercises.json';
+import { storageService } from '@/services/storage';
+import { DaySchedule, Exercise, ScheduledSession } from '@/types';
+import { useCallback, useEffect, useState } from 'react';
 
 // Load exercises from seed data
 const exercises: Exercise[] = exercisesData as Exercise[];
@@ -91,10 +91,14 @@ export function useScheduledExercises() {
     [sessions, getExerciseById]
   );
 
-  // Get today's sessions
+  // Get today's sessions (in local timezone)
   const getTodaySessions = useCallback((): Array<{ session: ScheduledSession; exercise: Exercise }> => {
-    const today = new Date().toISOString().split('T')[0];
-    return getSessionsForDate(today);
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayString = `${year}-${month}-${day}`;
+    return getSessionsForDate(todayString);
   }, [getSessionsForDate]);
 
   // Get all exercises
@@ -116,9 +120,10 @@ export function useScheduledExercises() {
     return targetDate >= today && targetDate <= threeWeeksFromNow;
   }, []);
 
-  // Get weekly overview (sessions grouped by week)
+  // Get weekly overview (sessions grouped by week, in local timezone)
   const getWeeklyOverview = useCallback((): DaySchedule[] => {
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const weeks: DaySchedule[] = [];
     
     for (let weekOffset = 0; weekOffset < 3; weekOffset++) {
@@ -129,7 +134,11 @@ export function useScheduledExercises() {
       for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
         const date = new Date(weekStart);
         date.setDate(weekStart.getDate() + dayOffset);
-        const dateString = date.toISOString().split('T')[0];
+        // Format in local timezone
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
         
         const dateSessions = getSessionsForDate(dateString);
         if (dateSessions.length > 0) {

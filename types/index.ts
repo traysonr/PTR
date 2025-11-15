@@ -56,3 +56,22 @@ export interface DaySchedule {
   }>;
 }
 
+// Schedule Style Types
+export type ScheduleStyle = 'auto-populate' | 'live-logging' | 'user-schedule';
+
+export interface WeekPlan {
+  id: string;
+  startDate: string; // ISO date string (YYYY-MM-DD) - first day of the week
+  endDate: string; // ISO date string (YYYY-MM-DD) - last day of the week (7 days after start)
+  scheduleStyle: ScheduleStyle;
+  selectedExerciseIds: string[]; // Exercises selected for this week
+  dailyTimeWindow?: {
+    minMinutes: number; // Minimum total exercise time per day
+    maxMinutes: number; // Maximum total exercise time per day
+  };
+  scheduledSessions: ScheduledSession[]; // For user-schedule and auto-populate modes
+  completedSessions: string[]; // Session IDs that have been completed (for live-logging)
+  createdAt: string;
+  updatedAt: string;
+}
+
