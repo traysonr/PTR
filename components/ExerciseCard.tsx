@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View, TouchableOpacity } from 'react-native';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
-import { Exercise, BodyPart, Goal, Intensity } from '@/types';
+import { Exercise, BodyArea, Goal, Intensity, Equipment } from '@/types/exercise';
 
 interface ExerciseCardProps {
   exercise: Exercise;
@@ -10,26 +10,41 @@ interface ExerciseCardProps {
   showDescription?: boolean;
 }
 
-const bodyPartLabels: Record<BodyPart, string> = {
+const bodyAreaLabels: Record<BodyArea, string> = {
   neck: 'Neck',
-  'lower-back': 'Lower Back',
-  shoulders: 'Shoulders',
-  knees: 'Knees',
-  hips: 'Hips',
-  ankles: 'Ankles',
+  upper_back: 'Upper Back',
+  lower_back: 'Lower Back',
+  shoulder: 'Shoulder',
+  hip: 'Hip',
+  knee: 'Knee',
+  ankle: 'Ankle',
+  wrist: 'Wrist',
+  elbow: 'Elbow',
+  core: 'Core',
 };
 
 const goalLabels: Record<Goal, string> = {
-  'pain-reduction': 'Pain Reduction',
+  pain_management: 'Pain Management',
   strength: 'Strength',
   mobility: 'Mobility',
-  'post-surgery-rehab': 'Post-Surgery Rehab',
+  posture: 'Posture',
+  endurance: 'Endurance',
 };
 
 const intensityLabels: Record<Intensity, string> = {
-  light: 'Light',
-  moderate: 'Moderate',
+  low: 'Low',
+  medium: 'Medium',
   high: 'High',
+};
+
+const equipmentLabels: Record<Equipment, string> = {
+  none: 'None',
+  dumbbells: 'Dumbbells',
+  exercise_ball: 'Exercise Ball',
+  resistance_band: 'Resistance Band',
+  chair: 'Chair',
+  step: 'Step',
+  foam_roll: 'Foam Roll',
 };
 
 export function ExerciseCard({ exercise, onPress, showDescription = true }: ExerciseCardProps) {
@@ -39,7 +54,9 @@ export function ExerciseCard({ exercise, onPress, showDescription = true }: Exer
         <ThemedText type="defaultSemiBold" style={styles.title}>
           {exercise.name}
         </ThemedText>
-        <ThemedText style={styles.bodyPart}>{bodyPartLabels[exercise.bodyPart]}</ThemedText>
+        <ThemedText style={styles.bodyAreas}>
+          {exercise.bodyAreas.map((area) => bodyAreaLabels[area]).join(', ')}
+        </ThemedText>
       </View>
 
       {showDescription && (
@@ -49,7 +66,7 @@ export function ExerciseCard({ exercise, onPress, showDescription = true }: Exer
       )}
 
       <View style={styles.tags}>
-        {exercise.goal.map((g) => (
+        {exercise.goals.map((g) => (
           <View key={g} style={styles.tag}>
             <ThemedText style={styles.tagText}>{goalLabels[g]}</ThemedText>
           </View>
@@ -59,20 +76,33 @@ export function ExerciseCard({ exercise, onPress, showDescription = true }: Exer
         </View>
       </View>
 
-      {(exercise.equipment || exercise.duration || exercise.sets || exercise.reps) && (
+      {(exercise.equipment.length > 0 ||
+        exercise.timeToComplete ||
+        exercise.sets ||
+        exercise.reps ||
+        exercise.holdTime) && (
         <View style={styles.meta}>
-          {exercise.equipment && (
-            <ThemedText style={styles.metaText}>Equipment: {exercise.equipment}</ThemedText>
-          )}
-          {exercise.duration && (
-            <ThemedText style={styles.metaText}>Duration: {exercise.duration} min</ThemedText>
-          )}
-          {(exercise.sets || exercise.reps) && (
+          {exercise.equipment.length > 0 && exercise.equipment[0] !== 'none' && (
             <ThemedText style={styles.metaText}>
-              {exercise.sets} sets × {exercise.reps} reps
+              Equipment: {exercise.equipment.map((eq) => equipmentLabels[eq]).join(', ')}
             </ThemedText>
           )}
+          {exercise.timeToComplete && (
+            <ThemedText style={styles.metaText}>Time: {exercise.timeToComplete}</ThemedText>
+          )}
+          {exercise.sets && (
+            <ThemedText style={styles.metaText}>Sets: {exercise.sets}</ThemedText>
+          )}
+          {exercise.reps && (
+            <ThemedText style={styles.metaText}>Reps: {exercise.reps}</ThemedText>
+          )}
+          {exercise.holdTime && (
+            <ThemedText style={styles.metaText}>Hold: {exercise.holdTime}</ThemedText>
+          )}
         </View>
+      )}
+      {exercise.notes && (
+        <ThemedText style={styles.notes}>Note: {exercise.notes}</ThemedText>
       )}
     </ThemedView>
   );
@@ -105,10 +135,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     flex: 1,
   },
-  bodyPart: {
+  bodyAreas: {
     fontSize: 14,
     opacity: 0.7,
     marginLeft: 12,
+    flex: 1,
+    textAlign: 'right',
+  },
+  notes: {
+    fontSize: 12,
+    opacity: 0.6,
+    fontStyle: 'italic',
+    marginTop: 8,
   },
   description: {
     fontSize: 14,

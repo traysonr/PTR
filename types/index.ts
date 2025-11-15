@@ -25,19 +25,8 @@ export interface UserProfile {
   updatedAt: string;
 }
 
-// Exercise Types
-export interface Exercise {
-  id: string;
-  name: string;
-  bodyPart: BodyPart;
-  goal: Goal[];
-  description: string;
-  equipment?: string;
-  intensity: Intensity;
-  duration?: number; // in minutes
-  sets?: number;
-  reps?: number;
-}
+// Exercise Types - Re-export from exercise.ts
+export { Exercise, BodyArea, Intensity as ExerciseIntensity, Goal as ExerciseGoal, Equipment } from './exercise';
 
 // Scheduled Session Types
 export interface ScheduledSession {

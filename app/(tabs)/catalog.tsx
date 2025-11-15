@@ -6,27 +6,69 @@ import { ExerciseCard } from '@/components/ExerciseCard';
 import { TextInput } from '@/components/TextInput';
 import { Button } from '@/components/Button';
 import { useExercises } from '@/hooks/useExercises';
-import { BodyPart, Goal } from '@/types';
+import { BodyArea, Goal, Equipment } from '@/types/exercise';
 import { Ionicons } from '@expo/vector-icons';
-// TODO: Add proper picker component - for now using simple buttons
 
-const BODY_PARTS: BodyPart[] = ['neck', 'lower-back', 'shoulders', 'knees', 'hips', 'ankles'];
-const GOALS: Goal[] = ['pain-reduction', 'strength', 'mobility', 'post-surgery-rehab'];
+const BODY_AREAS: BodyArea[] = [
+  'neck',
+  'upper_back',
+  'lower_back',
+  'shoulder',
+  'hip',
+  'knee',
+  'ankle',
+  'wrist',
+  'elbow',
+  'core',
+];
 
-const bodyPartLabels: Record<BodyPart, string> = {
+const GOALS: Goal[] = [
+  'pain_management',
+  'strength',
+  'mobility',
+  'posture',
+  'endurance',
+];
+
+const EQUIPMENT: Equipment[] = [
+  'none',
+  'dumbbells',
+  'exercise_ball',
+  'resistance_band',
+  'chair',
+  'step',
+  'foam_roll',
+];
+
+const bodyAreaLabels: Record<BodyArea, string> = {
   neck: 'Neck',
-  'lower-back': 'Lower Back',
-  shoulders: 'Shoulders',
-  knees: 'Knees',
-  hips: 'Hips',
-  ankles: 'Ankles',
+  upper_back: 'Upper Back',
+  lower_back: 'Lower Back',
+  shoulder: 'Shoulder',
+  hip: 'Hip',
+  knee: 'Knee',
+  ankle: 'Ankle',
+  wrist: 'Wrist',
+  elbow: 'Elbow',
+  core: 'Core',
 };
 
 const goalLabels: Record<Goal, string> = {
-  'pain-reduction': 'Pain Reduction',
+  pain_management: 'Pain Management',
   strength: 'Strength',
   mobility: 'Mobility',
-  'post-surgery-rehab': 'Post-Surgery Rehab',
+  posture: 'Posture',
+  endurance: 'Endurance',
+};
+
+const equipmentLabels: Record<Equipment, string> = {
+  none: 'None',
+  dumbbells: 'Dumbbells',
+  exercise_ball: 'Exercise Ball',
+  resistance_band: 'Resistance Band',
+  chair: 'Chair',
+  step: 'Step',
+  foam_roll: 'Foam Roll',
 };
 
 export default function CatalogScreen() {
@@ -34,14 +76,27 @@ export default function CatalogScreen() {
     exercises,
     searchQuery,
     setSearchQuery,
-    selectedBodyPart,
-    setSelectedBodyPart,
-    selectedGoal,
-    setSelectedGoal,
+    selectedBodyAreas,
+    toggleBodyArea,
+    showAllBodyAreas,
+    setAllBodyAreas,
+    selectedGoals,
+    toggleGoal,
+    showAllGoals,
+    setAllGoals,
+    selectedEquipment,
+    toggleEquipment,
+    showAllEquipment,
+    setAllEquipment,
     clearFilters,
   } = useExercises();
 
   const [showFilters, setShowFilters] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    bodyArea: true,
+    goal: true,
+    equipment: true,
+  });
 
   return (
     <ThemedView style={styles.container}>
@@ -70,60 +125,98 @@ export default function CatalogScreen() {
       {/* Filters */}
       {showFilters && (
         <ThemedView style={styles.filtersContainer}>
-          <ThemedText style={styles.filterSectionTitle}>Body Part</ThemedText>
-          <View style={styles.filterButtons}>
+          <ScrollView 
+            style={styles.filtersScrollView}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Body Area Section */}
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() =>
+                setExpandedSections((prev) => ({
+                  ...prev,
+                  bodyArea: !prev.bodyArea,
+                }))
+              }
+            >
+              <ThemedText style={styles.filterSectionTitle}>Body Area</ThemedText>
+              <Ionicons
+                name={expandedSections.bodyArea ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color="#666"
+              />
+            </TouchableOpacity>
+            {expandedSections.bodyArea && (
+              <View style={styles.filterButtons}>
             <TouchableOpacity
               style={[
                 styles.filterButton,
-                !selectedBodyPart && styles.filterButtonActive,
+                showAllBodyAreas && styles.filterButtonActive,
               ]}
-              onPress={() => setSelectedBodyPart(null)}
+              onPress={() => setAllBodyAreas(true)}
             >
               <ThemedText
                 style={[
                   styles.filterButtonText,
-                  !selectedBodyPart && styles.filterButtonTextActive,
+                  showAllBodyAreas && styles.filterButtonTextActive,
                 ]}
               >
                 All
               </ThemedText>
             </TouchableOpacity>
-            {BODY_PARTS.map((part) => (
+            {BODY_AREAS.map((area) => (
               <TouchableOpacity
-                key={part}
+                key={area}
                 style={[
                   styles.filterButton,
-                  selectedBodyPart === part && styles.filterButtonActive,
+                  !showAllBodyAreas && selectedBodyAreas.includes(area) && styles.filterButtonActive,
                 ]}
-                onPress={() =>
-                  setSelectedBodyPart(selectedBodyPart === part ? null : part)
-                }
+                onPress={() => toggleBodyArea(area)}
               >
                 <ThemedText
                   style={[
                     styles.filterButtonText,
-                    selectedBodyPart === part && styles.filterButtonTextActive,
+                    !showAllBodyAreas && selectedBodyAreas.includes(area) && styles.filterButtonTextActive,
                   ]}
                 >
-                  {bodyPartLabels[part]}
+                  {bodyAreaLabels[area]}
                 </ThemedText>
               </TouchableOpacity>
             ))}
-          </View>
+            </View>
+            )}
 
-          <ThemedText style={styles.filterSectionTitle}>Goal</ThemedText>
-          <View style={styles.filterButtons}>
+            {/* Goal Section */}
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() =>
+                setExpandedSections((prev) => ({
+                  ...prev,
+                  goal: !prev.goal,
+                }))
+              }
+            >
+              <ThemedText style={styles.filterSectionTitle}>Goal</ThemedText>
+              <Ionicons
+                name={expandedSections.goal ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color="#666"
+              />
+            </TouchableOpacity>
+            {expandedSections.goal && (
+              <View style={styles.filterButtons}>
             <TouchableOpacity
               style={[
                 styles.filterButton,
-                !selectedGoal && styles.filterButtonActive,
+                showAllGoals && styles.filterButtonActive,
               ]}
-              onPress={() => setSelectedGoal(null)}
+              onPress={() => setAllGoals(true)}
             >
               <ThemedText
                 style={[
                   styles.filterButtonText,
-                  !selectedGoal && styles.filterButtonTextActive,
+                  showAllGoals && styles.filterButtonTextActive,
                 ]}
               >
                 All
@@ -134,30 +227,97 @@ export default function CatalogScreen() {
                 key={goal}
                 style={[
                   styles.filterButton,
-                  selectedGoal === goal && styles.filterButtonActive,
+                  !showAllGoals && selectedGoals.includes(goal) && styles.filterButtonActive,
                 ]}
-                onPress={() => setSelectedGoal(selectedGoal === goal ? null : goal)}
+                onPress={() => toggleGoal(goal)}
               >
                 <ThemedText
                   style={[
                     styles.filterButtonText,
-                    selectedGoal === goal && styles.filterButtonTextActive,
+                    !showAllGoals && selectedGoals.includes(goal) && styles.filterButtonTextActive,
                   ]}
                 >
                   {goalLabels[goal]}
                 </ThemedText>
               </TouchableOpacity>
             ))}
-          </View>
+            </View>
+            )}
 
-          {(selectedBodyPart || selectedGoal || searchQuery) && (
-            <Button
-              title="Clear All Filters"
-              variant="outline"
-              onPress={clearFilters}
-              style={styles.clearAllButton}
-            />
-          )}
+            {/* Equipment Section */}
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() =>
+                setExpandedSections((prev) => ({
+                  ...prev,
+                  equipment: !prev.equipment,
+                }))
+              }
+            >
+              <ThemedText style={styles.filterSectionTitle}>Equipment</ThemedText>
+              <Ionicons
+                name={expandedSections.equipment ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color="#666"
+              />
+            </TouchableOpacity>
+            {expandedSections.equipment && (
+              <View style={styles.filterButtons}>
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                showAllEquipment && styles.filterButtonActive,
+              ]}
+              onPress={() => setAllEquipment(true)}
+            >
+              <ThemedText
+                style={[
+                  styles.filterButtonText,
+                  showAllEquipment && styles.filterButtonTextActive,
+                ]}
+              >
+                All
+              </ThemedText>
+            </TouchableOpacity>
+            {EQUIPMENT.map((equipment) => (
+              <TouchableOpacity
+                key={equipment}
+                style={[
+                  styles.filterButton,
+                  !showAllEquipment && selectedEquipment.includes(equipment) && styles.filterButtonActive,
+                ]}
+                onPress={() => toggleEquipment(equipment)}
+              >
+                <ThemedText
+                  style={[
+                    styles.filterButtonText,
+                    !showAllEquipment && selectedEquipment.includes(equipment) && styles.filterButtonTextActive,
+                  ]}
+                >
+                  {equipmentLabels[equipment]}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+            </View>
+            )}
+
+            {/* Action Buttons */}
+            <View style={styles.filterActions}>
+              {(!showAllBodyAreas || !showAllGoals || !showAllEquipment || searchQuery) && (
+                <Button
+                  title="Clear All Filters"
+                  variant="outline"
+                  onPress={clearFilters}
+                  style={styles.actionButton}
+                />
+              )}
+              <Button
+                title="Apply Filters"
+                onPress={() => setShowFilters(false)}
+                style={styles.actionButton}
+              />
+            </View>
+          </ScrollView>
         </ThemedView>
       )}
 
@@ -210,22 +370,43 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   filtersContainer: {
-    padding: 16,
     marginHorizontal: 20,
     marginBottom: 16,
     borderRadius: 12,
+    maxHeight: 500,
+    overflow: 'hidden',
+  },
+  filtersScrollView: {
+    padding: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    marginTop: 8,
   },
   filterSectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 12,
   },
   filterButtons: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 8,
+    marginTop: 12,
+  },
+  filterActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  actionButton: {
+    flex: 1,
   },
   filterButton: {
     paddingVertical: 8,

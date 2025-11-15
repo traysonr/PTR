@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { WeekPlan, ScheduleStyle, Exercise, ScheduledSession } from '@/types';
+import { WeekPlan, ScheduleStyle, ScheduledSession } from '@/types';
+import { Exercise } from '@/types/exercise';
 import { storageService } from '@/services/storage';
 
 export function useWeekPlans() {
@@ -135,7 +136,9 @@ export function useWeekPlans() {
 
       // Distribute exercises
       selectedExercises.forEach((exercise, index) => {
-        const exerciseDuration = exercise.duration || 10; // Default 10 minutes if not specified
+        // Parse timeToComplete (e.g., "3–5 minutes" or "5–7 minutes")
+      const timeMatch = exercise.timeToComplete?.match(/(\d+)/);
+      const exerciseDuration = timeMatch ? parseInt(timeMatch[1]) : 5; // Default 5 minutes if not specified
 
         // Find day with least time that can fit this exercise
         let bestDate: string | null = null;

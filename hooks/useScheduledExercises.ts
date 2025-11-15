@@ -1,10 +1,8 @@
-import exercisesData from '@/data/exercises.json';
 import { storageService } from '@/services/storage';
-import { DaySchedule, Exercise, ScheduledSession } from '@/types';
+import { DaySchedule, ScheduledSession } from '@/types';
+import { Exercise } from '@/types/exercise';
+import { EXERCISES } from '@/data/exercises';
 import { useCallback, useEffect, useState } from 'react';
-
-// Load exercises from seed data
-const exercises: Exercise[] = exercisesData as Exercise[];
 
 export function useScheduledExercises() {
   const [sessions, setSessions] = useState<ScheduledSession[]>([]);
@@ -74,7 +72,7 @@ export function useScheduledExercises() {
 
   // Get exercise by ID
   const getExerciseById = useCallback((exerciseId: string): Exercise | undefined => {
-    return exercises.find((e) => e.id === exerciseId);
+    return EXERCISES.find((e) => e.id === exerciseId);
   }, []);
 
   // Get sessions for a specific date
@@ -103,7 +101,7 @@ export function useScheduledExercises() {
 
   // Get all exercises
   const getAllExercises = useCallback((): Exercise[] => {
-    return exercises;
+    return EXERCISES;
   }, []);
 
   // Check if a date is within the 3-week planning window

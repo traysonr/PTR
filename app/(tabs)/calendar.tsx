@@ -9,7 +9,8 @@ import { TextInput } from '@/components/TextInput';
 import { useExercises } from '@/hooks/useExercises';
 import { useWeekPlans } from '@/hooks/useWeekPlans';
 import { useNotifications } from '@/hooks/useNotifications';
-import { WeekPlan, ScheduleStyle, Exercise, ScheduledSession } from '@/types';
+import { WeekPlan, ScheduleStyle, ScheduledSession } from '@/types';
+import { Exercise } from '@/types/exercise';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function CalendarScreen() {
@@ -395,7 +396,23 @@ export default function CalendarScreen() {
                     checked={selectedExerciseIds.includes(item.id)}
                     onToggle={() => toggleExerciseSelection(item.id)}
                   />
-                  <ThemedText style={styles.exerciseBodyPart}>{item.bodyPart}</ThemedText>
+                  <ThemedText style={styles.exerciseBodyPart}>
+                    {item.bodyAreas.map((area) => {
+                      const areaLabels: Record<string, string> = {
+                        neck: 'Neck',
+                        upper_back: 'Upper Back',
+                        lower_back: 'Lower Back',
+                        shoulder: 'Shoulder',
+                        hip: 'Hip',
+                        knee: 'Knee',
+                        ankle: 'Ankle',
+                        wrist: 'Wrist',
+                        elbow: 'Elbow',
+                        core: 'Core',
+                      };
+                      return areaLabels[area] || area;
+                    }).join(', ')}
+                  </ThemedText>
                 </TouchableOpacity>
               )}
               contentContainerStyle={styles.modalListContent}
