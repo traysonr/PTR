@@ -288,15 +288,16 @@ export default function RoutineDetailScreen() {
         {[0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
           const daySlots = getSlotsByDay(dayIndex);
           const summary = getDaySummary(dayIndex);
+          const isRestDay = daySlots.length === 0;
 
           return (
             <TouchableOpacity
               key={dayIndex}
-              style={styles.dayCard}
+              style={[styles.dayCard, isRestDay && styles.dayCardRest]}
               onPress={() => handleNavigateToDayFlow(dayIndex)}
               activeOpacity={0.7}
             >
-              <View style={styles.dayCardHeader}>
+              <View style={[styles.dayCardHeader, isRestDay && styles.dayCardHeaderRest]}>
                 <View style={styles.dayCardTitleRow}>
                   <ThemedText type="subtitle" style={styles.dayNumber}>
                     Day {dayIndex + 1}
@@ -353,10 +354,12 @@ export default function RoutineDetailScreen() {
                 ))}
               </View>
 
-              <View style={styles.dayCardFooter}>
-                <Ionicons name="chevron-forward" size={20} color="#007AFF" />
-                <ThemedText style={styles.viewDetailsText}>View details</ThemedText>
-              </View>
+              {daySlots.length > 0 && (
+                <View style={styles.dayCardFooter}>
+                  <Ionicons name="chevron-forward" size={20} color="#007AFF" />
+                  <ThemedText style={styles.viewDetailsText}>View details</ThemedText>
+                </View>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -472,8 +475,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e0e0e0',
   },
+  dayCardRest: {
+    padding: 12,
+    paddingBottom: 12,
+  },
   dayCardHeader: {
     marginBottom: 12,
+  },
+  dayCardHeaderRest: {
+    marginBottom: 0,
   },
   dayCardTitleRow: {
     flexDirection: 'row',
