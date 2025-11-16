@@ -1,13 +1,17 @@
+import { BodyArea, Equipment, Exercise, Goal, Intensity } from '@/types/exercise';
 import React from 'react';
-import { StyleSheet, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
-import { Exercise, BodyArea, Goal, Intensity, Equipment } from '@/types/exercise';
 
 interface ExerciseCardProps {
   exercise: Exercise;
   onPress?: () => void;
   showDescription?: boolean;
+  // Optional mode to tweak how meta information is rendered
+  // 'default' – show full meta (time, raw sets/reps)
+  // 'day' – used in Day Flow: hide time, collapse ranges to max values
+  mode?: 'default' | 'day';
 }
 
 const bodyAreaLabels: Record<BodyArea, string> = {
@@ -47,7 +51,24 @@ const equipmentLabels: Record<Equipment, string> = {
   foam_roll: 'Foam Roll',
 };
 
-export function ExerciseCard({ exercise, onPress, showDescription = true }: ExerciseCardProps) {
+function getMaxFromRange(value: string): string {
+  const rangeMatch = value.match(/(\d+)[–-](\d+)/);
+  if (rangeMatch) {
+    return rangeMatch[2];
+  }
+  const numberMatch = value.match(/(\d+)/);
+  if (numberMatch) {
+    return numberMatch[1];
+  }
+  return value;
+}
+
+export function ExerciseCard({
+  exercise,
+  onPress,
+  showDescription = true,
+  mode = 'default',
+}: ExerciseCardProps) {
   const content = (
     <ThemedView style={styles.card}>
       <View style={styles.header}>
@@ -87,14 +108,22 @@ export function ExerciseCard({ exercise, onPress, showDescription = true }: Exer
               Equipment: {exercise.equipment.map((eq) => equipmentLabels[eq]).join(', ')}
             </ThemedText>
           )}
-          {exercise.timeToComplete && (
+          {exercise.timeToComplete && mode === 'default' && (
             <ThemedText style={styles.metaText}>Time: {exercise.timeToComplete}</ThemedText>
           )}
           {exercise.sets && (
-            <ThemedText style={styles.metaText}>Sets: {exercise.sets}</ThemedText>
+            <ThemedText style={styles.metaText}>
+              {mode === 'day'
+                ? `Sets: ${getMaxFromRange(exercise.sets)}`
+                : `Sets: ${exercise.sets}`}
+            </ThemedText>
           )}
           {exercise.reps && (
-            <ThemedText style={styles.metaText}>Reps: {exercise.reps}</ThemedText>
+            <ThemedText style={styles.metaText}>
+              {mode === 'day'
+                ? `Reps: ${getMaxFromRange(exercise.reps)}`
+                : `Reps: ${exercise.reps}`}
+            </ThemedText>
           )}
           {exercise.holdTime && (
             <ThemedText style={styles.metaText}>Hold: {exercise.holdTime}</ThemedText>

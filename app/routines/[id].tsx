@@ -1,34 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, TouchableOpacity, Alert, Modal, Platform } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/Button';
-import { useRoutines } from '@/hooks/useRoutines';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { useExercises } from '@/hooks/useExercises';
-import { useWeekPlans } from '@/hooks/useWeekPlans';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useRoutines } from '@/hooks/useRoutines';
+import { useWeekPlans } from '@/hooks/useWeekPlans';
 import { RoutineExerciseSlot } from '@/types';
-import { Exercise, BodyArea } from '@/types/exercise';
-import { EXERCISES } from '@/data/exercises';
+import { Exercise } from '@/types/exercise';
 import { Ionicons } from '@expo/vector-icons';
-import { ExerciseCard } from '@/components/ExerciseCard';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-const bodyAreaLabels: Record<BodyArea, string> = {
-  neck: 'Neck',
-  upper_back: 'Upper Back',
-  lower_back: 'Lower Back',
-  shoulder: 'Shoulder',
-  hip: 'Hip',
-  knee: 'Knee',
-  ankle: 'Ankle',
-  wrist: 'Wrist',
-  elbow: 'Elbow',
-  core: 'Core',
-};
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Alert, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function RoutineDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -40,8 +23,6 @@ export default function RoutineDetailScreen() {
   const [routine, setRoutine] = useState(routines.find((r) => r.id === id));
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedStartDate, setSelectedStartDate] = useState(new Date());
-  const [swapSlot, setSwapSlot] = useState<RoutineExerciseSlot | null>(null);
-  const [showExerciseSelector, setShowExerciseSelector] = useState(false);
 
   useEffect(() => {
     const found = routines.find((r) => r.id === id);
@@ -58,40 +39,20 @@ export default function RoutineDetailScreen() {
     );
   }
 
-  const handleSwapExercise = (slot: RoutineExerciseSlot) => {
-    setSwapSlot(slot);
-    setShowExerciseSelector(true);
-  };
+  // Swap functionality moved to Day Flow screen
 
-  const handleSelectReplacement = (exercise: Exercise) => {
-    if (!swapSlot) return;
 
-    const updatedSlots = routine.slots.map((s) =>
-      s.id === swapSlot.id
-        ? {
-            ...s,
-            exerciseId: exercise.id,
-            estimatedMinutes: estimateExerciseMinutes(exercise),
-          }
-        : s
-    );
+  const handleMoveExercise = (slot: RoutineExerciseSlot, direction: 'up' | 'down') => {
+    const currentDayIndex = slot.dayIndex;
+    let targetDayIndex: number;
 
-    const updatedExerciseIds = [...new Set(updatedSlots.map((s) => s.exerciseId))];
+    if (direction === 'up') {
+      targetDayIndex = Math.max(0, currentDayIndex - 1);
+    } else {
+      targetDayIndex = Math.min(6, currentDayIndex + 1);
+    }
 
-    const updatedRoutine = {
-      ...routine,
-      slots: updatedSlots,
-      exerciseIds: updatedExerciseIds,
-      updatedAt: new Date().toISOString(),
-    };
-
-    setRoutine(updatedRoutine);
-    setShowExerciseSelector(false);
-    setSwapSlot(null);
-  };
-
-  const handleMoveToDay = (slot: RoutineExerciseSlot, targetDayIndex: number) => {
-    if (slot.dayIndex === targetDayIndex) return;
+    if (targetDayIndex === currentDayIndex) return;
 
     const slotsForTargetDay = routine.slots.filter((s) => s.dayIndex === targetDayIndex);
     const newOrder = slotsForTargetDay.length;
@@ -101,7 +62,7 @@ export default function RoutineDetailScreen() {
         return { ...s, dayIndex: targetDayIndex, order: newOrder };
       }
       // Update order for slots in the source day
-      if (s.dayIndex === slot.dayIndex && s.order > slot.order) {
+      if (s.dayIndex === currentDayIndex && s.order > slot.order) {
         return { ...s, order: s.order - 1 };
       }
       // Update order for slots in the target day that come after
@@ -118,6 +79,42 @@ export default function RoutineDetailScreen() {
     };
 
     setRoutine(updatedRoutine);
+    saveRoutine(updatedRoutine);
+  };
+
+  const handleMoveDayGroup = (dayIndex: number, direction: 'up' | 'down') => {
+    const targetDayIndex = direction === 'up' ? Math.max(0, dayIndex - 1) : Math.min(6, dayIndex + 1);
+    if (targetDayIndex === dayIndex) return;
+
+    const updatedSlots = routine.slots.map((slot) => {
+      if (slot.dayIndex === dayIndex) {
+        return { ...slot, dayIndex: targetDayIndex };
+      }
+      return slot;
+    });
+
+    // Re-normalize order within each day
+    const reorderedSlots: RoutineExerciseSlot[] = [];
+    for (let d = 0; d < 7; d++) {
+      const slotsForDay = updatedSlots
+        .filter((s) => s.dayIndex === d)
+        .sort((a, b) => a.order - b.order)
+        .map((s, idx) => ({ ...s, order: idx }));
+      reorderedSlots.push(...slotsForDay);
+    }
+
+    const updatedRoutine = {
+      ...routine,
+      slots: reorderedSlots,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setRoutine(updatedRoutine);
+    saveRoutine(updatedRoutine);
+  };
+
+  const handleNavigateToDayFlow = (dayIndex: number) => {
+    router.push(`/routines/${id}/day/${dayIndex}`);
   };
 
   const handleConfirmAndStart = async () => {
@@ -151,8 +148,13 @@ export default function RoutineDetailScreen() {
       try {
         const weekPlan = await createWeekPlanFromRoutine(routine, startDateString);
         if (weekPlan) {
-          // Schedule notifications
-          await scheduleSessionNotifications(weekPlan.scheduledSessions);
+          // Schedule notifications for all sessions
+          for (const session of weekPlan.scheduledSessions) {
+            const exercise = getExerciseById(session.exerciseId);
+            if (exercise) {
+              await scheduleSessionNotifications(session, exercise);
+            }
+          }
           
           Alert.alert('Success', 'Your routine has been scheduled!', [
             { text: 'OK', onPress: () => router.push('/(tabs)/calendar') },
@@ -192,23 +194,41 @@ export default function RoutineDetailScreen() {
     return 3;
   };
 
-  // Filter exercises for swap selector (similar body areas and time)
-  const getSwapCandidates = (): Exercise[] => {
-    if (!swapSlot) return [];
+  const getDaySummary = (
+    dayIndex: number
+  ): { headline: string; lines: string[]; totalMinutes: number } => {
+    const daySlots = getSlotsByDay(dayIndex);
+    if (daySlots.length === 0) {
+      return { headline: 'Rest day', lines: [], totalMinutes: 0 };
+    }
 
-    const currentExercise = getExerciseById(swapSlot.exerciseId);
-    if (!currentExercise) return allExercises;
+    const dayTotalMinutes = daySlots.reduce((sum, slot) => sum + slot.estimatedMinutes, 0);
 
-    const currentMinutes = swapSlot.estimatedMinutes;
-    const currentAreas = currentExercise.bodyAreas;
-
-    return allExercises.filter((exercise) => {
-      const exerciseMinutes = estimateExerciseMinutes(exercise);
-      const hasMatchingArea = exercise.bodyAreas.some((area) => currentAreas.includes(area));
-      const timeDiff = Math.abs(exerciseMinutes - currentMinutes);
-      
-      return hasMatchingArea && timeDiff <= 5; // Within 5 minutes
+    // Unique exercises in the order they first appear
+    const uniqueExerciseIds: string[] = [];
+    daySlots.forEach((slot) => {
+      if (!uniqueExerciseIds.includes(slot.exerciseId)) {
+        uniqueExerciseIds.push(slot.exerciseId);
+      }
     });
+
+    const count = uniqueExerciseIds.length;
+
+    let patternLabel = 'pattern';
+    if (count === 2) patternLabel = 'ABABAB format';
+    else if (count === 3) patternLabel = 'ABCABC format';
+    else if (count === 4) patternLabel = 'AABBCCDD format';
+
+    const headline = `${count} exercise${count > 1 ? 's' : ''} in an ${patternLabel}:`;
+
+    const letters = ['A', 'B', 'C', 'D'];
+    const lines = uniqueExerciseIds.map((id, idx) => {
+      const exercise = getExerciseById(id);
+      const letter = letters[idx] || '?';
+      return `(${letter}) ${exercise ? exercise.name : 'Exercise'}`;
+    });
+
+    return { headline, lines, totalMinutes: dayTotalMinutes };
   };
 
   return (
@@ -243,72 +263,82 @@ export default function RoutineDetailScreen() {
         </View>
 
         <ThemedText type="subtitle" style={styles.sectionTitle}>
-          7-Day Schedule
+          Weekly Schedule
         </ThemedText>
 
         {[0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
           const daySlots = getSlotsByDay(dayIndex);
-          const dayTotalMinutes = daySlots.reduce((sum, slot) => sum + slot.estimatedMinutes, 0);
+          const summary = getDaySummary(dayIndex);
 
           return (
-            <View key={dayIndex} style={styles.daySection}>
-              <View style={styles.dayHeader}>
-                <ThemedText type="subtitle" style={styles.dayLabel}>
-                  {DAY_LABELS[dayIndex]}
-                </ThemedText>
-                {daySlots.length > 0 && (
-                  <ThemedText style={styles.dayTotal}>{dayTotalMinutes} min</ThemedText>
-                )}
-              </View>
-
-              {daySlots.length === 0 ? (
-                <ThemedText style={styles.restDay}>Rest Day</ThemedText>
-              ) : (
-                daySlots.map((slot) => {
-                  const exercise = getExerciseById(slot.exerciseId);
-                  if (!exercise) return null;
-
-                  return (
-                    <View key={slot.id} style={styles.slotCard}>
-                      <View style={styles.slotHeader}>
-                        <View style={styles.slotInfo}>
-                          <ThemedText style={styles.exerciseName}>{exercise.name}</ThemedText>
-                          <ThemedText style={styles.exerciseAreas}>
-                            {exercise.bodyAreas.map((area) => bodyAreaLabels[area]).join(', ')}
-                          </ThemedText>
-                        </View>
-                        <ThemedText style={styles.slotMinutes}>
-                          {slot.estimatedMinutes} min
-                        </ThemedText>
-                      </View>
-
-                      <View style={styles.slotActions}>
-                        <Button
-                          title="Swap"
-                          onPress={() => handleSwapExercise(slot)}
-                          variant="outline"
-                          style={styles.actionButton}
-                        />
-                        <View style={styles.moveButtons}>
-                          {[0, 1, 2, 3, 4, 5, 6]
-                            .filter((d) => d !== dayIndex)
-                            .slice(0, 3)
-                            .map((targetDay) => (
-                              <Button
-                                key={targetDay}
-                                title={DAY_LABELS[targetDay]}
-                                onPress={() => handleMoveToDay(slot, targetDay)}
-                                variant="outline"
-                                style={styles.moveButton}
-                              />
-                            ))}
-                        </View>
+            <TouchableOpacity
+              key={dayIndex}
+              style={styles.dayCard}
+              onPress={() => handleNavigateToDayFlow(dayIndex)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.dayCardHeader}>
+                <View style={styles.dayCardTitleRow}>
+                  <ThemedText type="subtitle" style={styles.dayNumber}>
+                    Day {dayIndex + 1}
+                  </ThemedText>
+                  {daySlots.length > 0 && (
+                    <View style={styles.dayControls}>
+                      <ThemedText style={styles.dayTotalMinutes}>
+                        {summary.totalMinutes} min
+                      </ThemedText>
+                      <View style={styles.dayMoveArrows}>
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleMoveDayGroup(dayIndex, 'up');
+                          }}
+                          disabled={dayIndex === 0}
+                          style={[
+                            styles.arrowButton,
+                            dayIndex === 0 && styles.arrowButtonDisabled,
+                          ]}
+                        >
+                          <Ionicons
+                            name="chevron-up"
+                            size={18}
+                            color={dayIndex === 0 ? '#ccc' : '#007AFF'}
+                          />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleMoveDayGroup(dayIndex, 'down');
+                          }}
+                          disabled={dayIndex === 6}
+                          style={[
+                            styles.arrowButton,
+                            dayIndex === 6 && styles.arrowButtonDisabled,
+                          ]}
+                        >
+                          <Ionicons
+                            name="chevron-down"
+                            size={18}
+                            color={dayIndex === 6 ? '#ccc' : '#007AFF'}
+                          />
+                        </TouchableOpacity>
                       </View>
                     </View>
-                  );
-                })
-              )}
-            </View>
+                  )}
+                </View>
+                <ThemedText style={styles.daySummary}>{summary.headline}</ThemedText>
+                {summary.lines.map((line) => (
+                  <ThemedText key={line} style={styles.dayLine}>
+                    {line}
+                  </ThemedText>
+                ))}
+              </View>
+
+              <View style={styles.dayCardFooter}>
+                <Ionicons name="chevron-forward" size={20} color="#007AFF" />
+                <ThemedText style={styles.viewDetailsText}>View details</ThemedText>
+              </View>
+            </TouchableOpacity>
           );
         })}
 
@@ -369,35 +399,6 @@ export default function RoutineDetailScreen() {
         </>
       )}
 
-      {/* Exercise Selector Modal */}
-      <Modal
-        visible={showExerciseSelector}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowExerciseSelector(false)}
-      >
-        <ThemedView style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <ThemedText type="subtitle">Select Replacement Exercise</ThemedText>
-              <TouchableOpacity onPress={() => setShowExerciseSelector(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalScroll}>
-              {getSwapCandidates().map((exercise) => (
-                <TouchableOpacity
-                  key={exercise.id}
-                  onPress={() => handleSelectReplacement(exercise)}
-                  style={styles.exerciseOption}
-                >
-                  <ExerciseCard exercise={exercise} showDescription={false} />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </ThemedView>
-      </Modal>
     </ThemedView>
   );
 }
@@ -444,96 +445,100 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontSize: 20,
   },
-  daySection: {
-    marginBottom: 24,
+  dayCard: {
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
-  dayHeader: {
+  dayCardHeader: {
+    marginBottom: 12,
+  },
+  dayCardTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  dayLabel: {
-    fontSize: 18,
-  },
-  dayTotal: {
-    fontSize: 14,
-    opacity: 0.7,
-  },
-  restDay: {
-    opacity: 0.5,
-    fontStyle: 'italic',
-    paddingVertical: 12,
-  },
-  slotCard: {
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    marginBottom: 12,
-  },
-  slotHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  slotInfo: {
-    flex: 1,
-  },
-  exerciseName: {
-    fontSize: 16,
-    fontWeight: '600',
     marginBottom: 4,
   },
-  exerciseAreas: {
+  dayNumber: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  dayTotalMinutes: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  dayControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dayMoveArrows: {
+    flexDirection: 'column',
+  },
+  daySummary: {
+    fontSize: 13,
+    opacity: 0.7,
+    lineHeight: 18,
+  },
+  dayLine: {
     fontSize: 13,
     opacity: 0.7,
   },
-  slotMinutes: {
+  exercisesList: {
+    marginBottom: 12,
+  },
+  exerciseRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  exerciseInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  exerciseNameCompact: {
     fontSize: 14,
     fontWeight: '500',
+    marginBottom: 2,
   },
-  slotActions: {
-    marginTop: 8,
-    gap: 8,
+  exerciseMinutesCompact: {
+    fontSize: 12,
+    opacity: 0.6,
   },
-  actionButton: {
-    minWidth: 100,
+  moveArrows: {
+    flexDirection: 'column',
+    gap: 4,
   },
-  moveButtons: {
+  arrowButton: {
+    padding: 4,
+  },
+  arrowButtonDisabled: {
+    opacity: 0.3,
+  },
+  dayCardFooter: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
   },
-  moveButton: {
-    flex: 1,
+  viewDetailsText: {
+    fontSize: 14,
+    color: '#007AFF',
+    marginLeft: 4,
   },
   confirmButton: {
     marginTop: 24,
     marginBottom: 40,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-    padding: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalScroll: {
-    flex: 1,
-  },
-  exerciseOption: {
-    marginBottom: 12,
   },
   datePickerModal: {
     flex: 1,

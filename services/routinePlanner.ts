@@ -1,7 +1,7 @@
-import { Exercise, BodyArea, Intensity, Equipment, Goal } from '@/types/exercise';
-import { UserProfile } from '@/types';
-import { Routine, RoutineExerciseSlot } from '@/types/routine';
 import { EXERCISES } from '@/data/exercises';
+import { UserProfile } from '@/types';
+import { BodyArea, Equipment, Exercise, Intensity } from '@/types/exercise';
+import { Routine, RoutineExerciseSlot } from '@/types/routine';
 
 /**
  * Estimates exercise duration in minutes from timeToComplete string
@@ -110,25 +110,35 @@ export function generateRoutineFromProfile(
   const targetWeeklyMinutes = profile.maxMinutesPerWeek || days * maxPerDayMinutes;
   
   // Estimate total minutes we need across all exercises
-  // We'll select enough exercises to roughly meet the weekly target
+  // We'll select enough exercises to meet the weekly target (with some buffer for variety)
   const selectedExercises: Exercise[] = [];
   let estimatedTotalMinutes = 0;
   const usedExerciseIds = new Set<string>();
 
+  // Select exercises until we have enough to meet the target
+  // Allow up to 30% over target to ensure we have enough variety and can distribute properly
+  const maxTotalMinutes = targetWeeklyMinutes * 1.3;
+  
   for (const exercise of prioritizedCandidates) {
     if (usedExerciseIds.has(exercise.id)) continue;
     
     const minutes = estimateExerciseMinutes(exercise);
-    if (estimatedTotalMinutes + minutes <= targetWeeklyMinutes * 1.2) {
-      // Allow up to 20% over target to ensure we have enough variety
+    
+    // Add exercise if we haven't exceeded the buffer limit
+    if (estimatedTotalMinutes + minutes <= maxTotalMinutes) {
       selectedExercises.push(exercise);
       usedExerciseIds.add(exercise.id);
       estimatedTotalMinutes += minutes;
     }
     
-    // Stop if we have enough exercises for the week
-    if (selectedExercises.length >= days * 3) break; // Roughly 3 exercises per day max
-    if (estimatedTotalMinutes >= targetWeeklyMinutes) break;
+    // Stop if we have enough exercises to meet the target (with some buffer)
+    // We need at least enough to fill each day, so aim for targetWeeklyMinutes
+    if (estimatedTotalMinutes >= targetWeeklyMinutes) {
+      // But continue if we have very few exercises (need variety)
+      if (selectedExercises.length >= days * 2) {
+        break;
+      }
+    }
   }
 
   // Ensure we have at least a few exercises
@@ -149,63 +159,122 @@ export function generateRoutineFromProfile(
     if (day >= 7) trainingDays[idx] = 6;
   });
 
+  // Calculate target minutes per day to reach weekly target
+  const targetMinutesPerDay = Math.floor(targetWeeklyMinutes / days);
+  // Allow some flexibility: aim for target, but respect maxPerDayMinutes as hard limit
+  const idealMinutesPerDay = Math.min(targetMinutesPerDay, maxPerDayMinutes);
+
   const slots: RoutineExerciseSlot[] = [];
   let exerciseIndex = 0;
   let slotIdCounter = 1;
+  let totalWeeklyMinutesSoFar = 0;
+
+  const maxExercisesPerDay = 4;
+  const minExercisesPerDay = 2;
+
+  // Pattern templates for how exercises are performed within a day.
+  // Indexes refer to positions in the day's unique exercise list.
+  const patternsByCount: Record<number, number[][]> = {
+    // 2 exercises → ABABAB
+    2: [[0, 1, 0, 1, 0, 1]],
+    // 3 exercises → ABCABC
+    3: [[0, 1, 2, 0, 1, 2]],
+    // 4 exercises → AABBCCDD
+    4: [[0, 0, 1, 1, 2, 2, 3, 3]],
+  };
 
   for (const dayIndex of trainingDays) {
     let dayMinutes = 0;
+
+    // Calculate remaining minutes needed to reach weekly target
+    const remainingWeeklyMinutes = targetWeeklyMinutes - totalWeeklyMinutesSoFar;
+    const remainingDays = trainingDays.length - trainingDays.indexOf(dayIndex);
+    const targetForThisDay = remainingDays > 0 
+      ? Math.min(Math.ceil(remainingWeeklyMinutes / remainingDays), maxPerDayMinutes)
+      : Math.min(idealMinutesPerDay, maxPerDayMinutes);
+
+    // Decide how many unique exercises this day will use (2–4),
+    // based on remaining available exercises.
+    const availableExercises = selectedExercises.length - exerciseIndex;
+    const possibleSizes = [2, 3, 4].filter(
+      (size) => size <= availableExercises && size <= maxExercisesPerDay
+    );
+    const groupSize =
+      possibleSizes.length > 0
+        ? possibleSizes[Math.floor(Math.random() * possibleSizes.length)]
+        : Math.min(maxExercisesPerDay, Math.max(minExercisesPerDay, availableExercises || minExercisesPerDay));
+
+    // Pick that many unique exercises for this day
     const dayExercises: Exercise[] = [];
-    const dayBodyAreas: BodyArea[] = []; // Track body areas used in this day to avoid back-to-back
+    for (let i = 0; i < groupSize && exerciseIndex < selectedExercises.length; i++, exerciseIndex++) {
+      dayExercises.push(selectedExercises[exerciseIndex]);
+    }
 
-    // Try to fill the day up to maxPerDayMinutes
-    while (dayMinutes < maxPerDayMinutes && exerciseIndex < selectedExercises.length) {
-      // Try to find an exercise that doesn't repeat the last body area
-      let nextExercise: Exercise | null = null;
-      let nextIndex = exerciseIndex;
+    // If we still have fewer than the minimum, re-use earlier candidates
+    let reuseIndex = 0;
+    while (dayExercises.length < minExercisesPerDay && dayExercises.length < maxExercisesPerDay) {
+      const candidate = selectedExercises[reuseIndex % selectedExercises.length];
+      if (!dayExercises.includes(candidate)) {
+        dayExercises.push(candidate);
+      }
+      reuseIndex++;
+    }
 
-      for (let i = exerciseIndex; i < selectedExercises.length; i++) {
-        const candidate = selectedExercises[i];
-        const candidateMinutes = estimateExerciseMinutes(candidate);
-        
-        if (dayMinutes + candidateMinutes > maxPerDayMinutes * 1.1) continue; // Don't exceed too much
-        
-        // Prefer exercises that target different body areas
-        const candidatePrimaryArea = getPrimaryBodyArea(candidate);
-        const lastArea = dayBodyAreas.length > 0 ? dayBodyAreas[dayBodyAreas.length - 1] : null;
-        
-        if (!lastArea || candidatePrimaryArea !== lastArea) {
-          nextExercise = candidate;
-          nextIndex = i;
+    const uniqueCount = dayExercises.length;
+
+    // Build the in-day pattern sequence (e.g., ABABAB, ABCABC, AABBCCDD)
+    let scheduledExercises: Exercise[] = [...dayExercises];
+
+    if (uniqueCount >= 2 && patternsByCount[uniqueCount]) {
+      const templates = patternsByCount[uniqueCount];
+      const baseTemplate = templates[Math.floor(Math.random() * templates.length)];
+
+      const sequence: Exercise[] = [];
+      let seqMinutes = 0;
+
+      // Repeat the base pattern as many times as we can without exceeding
+      // the daily cap too much, aiming for the target minutes.
+      outer: while (true) {
+        for (const idx of baseTemplate) {
+          const ex = dayExercises[idx];
+          const minutes = estimateExerciseMinutes(ex);
+          if (seqMinutes + minutes > maxPerDayMinutes * 1.1) {
+            break outer;
+          }
+          sequence.push(ex);
+          seqMinutes += minutes;
+        }
+
+        // Stop if we've reached or are close to the target for this day
+        if (seqMinutes >= targetForThisDay * 0.9) {
           break;
         }
       }
 
-      // If no non-repeating exercise found, use the next one anyway
-      if (!nextExercise) {
-        nextExercise = selectedExercises[exerciseIndex];
-        nextIndex = exerciseIndex;
-      }
-
-      const minutes = estimateExerciseMinutes(nextExercise);
-      if (dayMinutes + minutes <= maxPerDayMinutes * 1.1) {
-        dayExercises.push(nextExercise);
-        dayMinutes += minutes;
-        dayBodyAreas.push(getPrimaryBodyArea(nextExercise));
-        
-        // Move this exercise to the front and increment index
-        [selectedExercises[exerciseIndex], selectedExercises[nextIndex]] = [
-          selectedExercises[nextIndex],
-          selectedExercises[exerciseIndex],
-        ];
-        exerciseIndex++;
+      if (sequence.length > 0) {
+        scheduledExercises = sequence;
+        dayMinutes = seqMinutes;
       } else {
-        break; // Can't fit more exercises in this day
+        // Fallback: single pass of unique exercises
+        const fallback: Exercise[] = [];
+        let fbMinutes = 0;
+        for (const ex of dayExercises) {
+          const minutes = estimateExerciseMinutes(ex);
+          if (fbMinutes + minutes > maxPerDayMinutes * 1.1) break;
+          fallback.push(ex);
+          fbMinutes += minutes;
+        }
+        if (fallback.length > 0) {
+          scheduledExercises = fallback;
+          dayMinutes = fbMinutes;
+        }
       }
     }
 
-    // Create slots for this day
-    dayExercises.forEach((exercise, order) => {
+    totalWeeklyMinutesSoFar += dayMinutes;
+
+    // Create slots for this day based on the pattern sequence
+    scheduledExercises.forEach((exercise, order) => {
       slots.push({
         id: `slot-${slotIdCounter++}`,
         exerciseId: exercise.id,
