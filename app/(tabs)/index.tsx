@@ -1,16 +1,15 @@
-import React from 'react';
-import { StyleSheet, ScrollView, View, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/Button';
 import { ExerciseCard } from '@/components/ExerciseCard';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { useProfile } from '@/hooks/useProfile';
 import { useRoutines } from '@/hooks/useRoutines';
 import { useScheduledExercises } from '@/hooks/useScheduledExercises';
 import { useWeekPlans } from '@/hooks/useWeekPlans';
-import { ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import React from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 
 export default function HomeScreen() {
   const { profile, loading: profileLoading } = useProfile();
@@ -133,7 +132,7 @@ export default function HomeScreen() {
               <View style={styles.metaItem}>
                 <Ionicons name="fitness-outline" size={16} color="#666" />
                 <ThemedText style={styles.metaText}>
-                  {activeRoutine.exerciseIds?.length || 0} exercises
+                  {activeRoutine.slots ? [...new Set(activeRoutine.slots.map((s) => s.exerciseId))].length : 0} exercises
                 </ThemedText>
               </View>
             </View>

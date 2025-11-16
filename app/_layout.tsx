@@ -1,13 +1,13 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, useSegments, useRouter } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator } from 'react-native';
 import 'react-native-reanimated';
 
+import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { storageService } from '@/services/storage';
-import { ThemedView } from '@/components/themed-view';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -57,6 +57,13 @@ export default function RootLayout() {
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         <Stack.Screen name="routines/[id]" options={{ headerShown: true, title: 'Routine Details' }} />
+        <Stack.Screen 
+          name="routines/[id]/day/[dayIndex]" 
+          options={{ 
+            headerShown: true,
+            headerBackTitle: 'Back'
+          }} 
+        />
         <Stack.Screen name="settings/exercise-catalog" options={{ headerShown: true, title: 'Exercise Catalog' }} />
       </Stack>
       <StatusBar style="auto" />

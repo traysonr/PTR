@@ -213,15 +213,30 @@ export default function RoutineDetailScreen() {
     });
 
     const count = uniqueExerciseIds.length;
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+    
+    // Calculate how many times the pattern repeats
+    const patternRepeats = count > 0 ? Math.floor(daySlots.length / count) : 0;
+    
+    // Build pattern string (e.g., "ABC" for 3 exercises)
+    const basePattern = letters.slice(0, count).join('');
+    
+    let patternLabel = '';
+    if (count === 1) {
+      patternLabel = 'A'.repeat(daySlots.length);
+    } else if (count === 2) {
+      patternLabel = 'ABABAB';
+    } else if (count === 3) {
+      patternLabel = 'ABCABC';
+    } else if (count === 4) {
+      patternLabel = 'AABBCCDD';
+    } else {
+      // For other counts, repeat the base pattern
+      patternLabel = basePattern.repeat(patternRepeats > 0 ? patternRepeats : 1);
+    }
 
-    let patternLabel = 'pattern';
-    if (count === 2) patternLabel = 'ABABAB format';
-    else if (count === 3) patternLabel = 'ABCABC format';
-    else if (count === 4) patternLabel = 'AABBCCDD format';
+    const headline = `${count} exercise${count > 1 ? 's' : ''} in an ${patternLabel} format:`;
 
-    const headline = `${count} exercise${count > 1 ? 's' : ''} in an ${patternLabel}:`;
-
-    const letters = ['A', 'B', 'C', 'D'];
     const lines = uniqueExerciseIds.map((id, idx) => {
       const exercise = getExerciseById(id);
       const letter = letters[idx] || '?';
@@ -230,6 +245,10 @@ export default function RoutineDetailScreen() {
 
     return { headline, lines, totalMinutes: dayTotalMinutes };
   };
+
+  // Calculate total unique exercises across all days
+  const allUniqueExerciseIds = [...new Set(routine.slots.map((s) => s.exerciseId))];
+  const totalUniqueExercises = allUniqueExerciseIds.length;
 
   return (
     <ThemedView style={styles.container}>
@@ -257,7 +276,7 @@ export default function RoutineDetailScreen() {
           <View style={styles.summaryItem}>
             <Ionicons name="fitness-outline" size={20} color="#007AFF" />
             <ThemedText style={styles.summaryText}>
-              {routine.exerciseIds.length} exercises
+              {totalUniqueExercises} exercises
             </ThemedText>
           </View>
         </View>

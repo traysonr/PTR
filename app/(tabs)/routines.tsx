@@ -1,13 +1,12 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, View, TouchableOpacity, Alert } from 'react-native';
-import { router } from 'expo-router';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/Button';
-import { useRoutines } from '@/hooks/useRoutines';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { useProfile } from '@/hooks/useProfile';
+import { useRoutines } from '@/hooks/useRoutines';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator } from 'react-native';
+import { router } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function RoutinesScreen() {
   const { routines, activeRoutine, isLoading, createRoutineFromProfile, setActiveRoutine } =
@@ -120,7 +119,7 @@ export default function RoutinesScreen() {
                 <View style={styles.metaItem}>
                   <Ionicons name="fitness-outline" size={16} color="#666" />
                   <ThemedText style={styles.metaText}>
-                    {routine.exerciseIds.length} exercises
+                    {[...new Set(routine.slots.map((s) => s.exerciseId))].length} exercises
                   </ThemedText>
                 </View>
               </View>

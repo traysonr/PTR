@@ -5,10 +5,11 @@ import { ThemedView } from '@/components/themed-view';
 import { useExercises } from '@/hooks/useExercises';
 import { useRoutines } from '@/hooks/useRoutines';
 import { RoutineExerciseSlot } from '@/types';
-import { BodyArea, Exercise } from '@/types/exercise';
+import { BodyArea, Exercise, Goal, Intensity } from '@/types/exercise';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useNavigation } from '@react-navigation/native';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 const bodyAreaLabels: Record<BodyArea, string> = {
@@ -24,11 +25,26 @@ const bodyAreaLabels: Record<BodyArea, string> = {
   core: 'Core',
 };
 
+const goalLabels: Record<Goal, string> = {
+  pain_management: 'Pain Management',
+  strength: 'Strength',
+  mobility: 'Mobility',
+  posture: 'Posture',
+  endurance: 'Endurance',
+};
+
+const intensityLabels: Record<Intensity, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
 export default function DayFlowScreen() {
   const { id, dayIndex: dayIndexParam } = useLocalSearchParams<{ id: string; dayIndex: string }>();
   const dayIndex = parseInt(dayIndexParam || '0', 10);
   const { routines, saveRoutine, isLoading } = useRoutines();
   const { allExercises, getExerciseById } = useExercises();
+  const navigation = useNavigation();
 
   const [routine, setRoutine] = useState(routines.find((r) => r.id === id));
   const [swapSlot, setSwapSlot] = useState<RoutineExerciseSlot | null>(null);
@@ -40,6 +56,12 @@ export default function DayFlowScreen() {
       setRoutine(found);
     }
   }, [id, routines]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: `Day ${dayIndex + 1}`,
+    });
+  }, [navigation, dayIndex]);
 
   if (!routine || isLoading) {
     return (
@@ -80,8 +102,9 @@ export default function DayFlowScreen() {
   const handleSelectReplacement = (exercise: Exercise) => {
     if (!swapSlot) return;
 
+    // Swap all instances of this exercise in the day
     const updatedSlots = routine.slots.map((s) =>
-      s.id === swapSlot.id
+      s.dayIndex === dayIndex && s.exerciseId === swapSlot.exerciseId
         ? {
             ...s,
             exerciseId: exercise.id,
@@ -127,18 +150,39 @@ export default function DayFlowScreen() {
   const daySlots = getSlotsByDay(dayIndex);
   const dayTotalMinutes = daySlots.reduce((sum, slot) => sum + slot.estimatedMinutes, 0);
 
+  // Get unique exercises in the order they first appear
+  const uniqueExerciseIds: string[] = [];
+  const exerciseIdToFirstSlot: Record<string, RoutineExerciseSlot> = {};
+  daySlots.forEach((slot) => {
+    if (!uniqueExerciseIds.includes(slot.exerciseId)) {
+      uniqueExerciseIds.push(slot.exerciseId);
+      exerciseIdToFirstSlot[slot.exerciseId] = slot;
+    }
+  });
+
+  const uniqueExerciseCount = uniqueExerciseIds.length;
+  const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+  
+  // Calculate pattern format (e.g., "ABCABC")
+  const patternRepeats = uniqueExerciseCount > 0 ? Math.floor(daySlots.length / uniqueExerciseCount) : 0;
+  const basePattern = letters.slice(0, uniqueExerciseCount).join('');
+  
+  let patternLabel = '';
+  if (uniqueExerciseCount === 1) {
+    patternLabel = 'A'.repeat(daySlots.length);
+  } else if (uniqueExerciseCount === 2) {
+    patternLabel = 'ABABAB';
+  } else if (uniqueExerciseCount === 3) {
+    patternLabel = 'ABCABC';
+  } else if (uniqueExerciseCount === 4) {
+    patternLabel = 'AABBCCDD';
+  } else {
+    // For other counts, repeat the base pattern
+    patternLabel = basePattern.repeat(patternRepeats > 0 ? patternRepeats : 1);
+  }
+
   return (
     <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#007AFF" />
-        </TouchableOpacity>
-        <ThemedText type="title" style={styles.title}>
-          Day {dayIndex + 1}
-        </ThemedText>
-        <View style={styles.placeholder} />
-      </View>
-
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         {daySlots.length === 0 ? (
           <View style={styles.emptyState}>
@@ -154,7 +198,10 @@ export default function DayFlowScreen() {
                 Day Overview
               </ThemedText>
               <ThemedText style={styles.summaryText}>
-                {daySlots.length} exercise{daySlots.length > 1 ? 's' : ''} • {dayTotalMinutes} minutes total
+                {uniqueExerciseCount} exercise{uniqueExerciseCount > 1 ? 's' : ''} • {dayTotalMinutes} minutes total
+              </ThemedText>
+              <ThemedText style={styles.summaryFormat}>
+                Format: {patternLabel}
               </ThemedText>
             </View>
 
@@ -162,26 +209,95 @@ export default function DayFlowScreen() {
               Exercises
             </ThemedText>
 
-            {daySlots.map((slot) => {
-              const exercise = getExerciseById(slot.exerciseId);
+            {uniqueExerciseIds.map((exerciseId, idx) => {
+              const exercise = getExerciseById(exerciseId);
               if (!exercise) return null;
+              const letter = letters[idx] || '?';
+              const firstSlot = exerciseIdToFirstSlot[exerciseId];
+              const bodyAreasText = exercise.bodyAreas.map((area) => bodyAreaLabels[area]).join(', ');
 
               return (
-                <View key={slot.id} style={styles.exerciseCard}>
-                  <ExerciseCard exercise={exercise} showDescription={true} mode="day" />
-                  <View style={styles.exerciseMeta}>
-                    <ThemedText style={styles.exerciseTime}>
-                      Estimated time: {slot.estimatedMinutes} minutes
+                <View key={exerciseId} style={styles.exerciseCard}>
+                  <ThemedView style={styles.exerciseCardInner}>
+                    <ThemedText type="defaultSemiBold" style={styles.exerciseTitle}>
+                      {letter}. {exercise.name}
                     </ThemedText>
-                  </View>
-                  <View style={styles.swapButtonWrapper}>
-                    <Button
-                      title="Swap"
-                      onPress={() => handleSwapExercise(slot)}
-                      variant="outline"
-                      style={styles.swapButton}
-                    />
-                  </View>
+                    <ThemedText style={styles.exerciseBodyAreas}>
+                      {bodyAreasText}
+                    </ThemedText>
+                    
+                    {exercise.description && (
+                      <ThemedText style={styles.exerciseDescription}>
+                        {exercise.description}
+                      </ThemedText>
+                    )}
+
+                    <View style={styles.exerciseTags}>
+                      {exercise.goals.map((g) => (
+                        <View key={g} style={styles.exerciseTag}>
+                          <ThemedText style={styles.exerciseTagText}>{goalLabels[g]}</ThemedText>
+                        </View>
+                      ))}
+                      <View style={[styles.exerciseTag, styles.intensityTag]}>
+                        <ThemedText style={styles.exerciseTagText}>{intensityLabels[exercise.intensity]}</ThemedText>
+                      </View>
+                    </View>
+
+                    {(exercise.equipment.length > 0 ||
+                      exercise.sets ||
+                      exercise.reps ||
+                      exercise.holdTime) && (
+                      <View style={styles.exerciseMetaInfo}>
+                        {exercise.equipment.length > 0 && exercise.equipment[0] !== 'none' && (
+                          <ThemedText style={styles.exerciseMetaText}>
+                            Equipment: {exercise.equipment.map((eq) => {
+                              const equipmentLabels: Record<string, string> = {
+                                none: 'None',
+                                dumbbells: 'Dumbbells',
+                                exercise_ball: 'Exercise Ball',
+                                resistance_band: 'Resistance Band',
+                                chair: 'Chair',
+                                step: 'Step',
+                                foam_roll: 'Foam Roll',
+                              };
+                              return equipmentLabels[eq] || eq;
+                            }).join(', ')}
+                          </ThemedText>
+                        )}
+                        {exercise.sets && (
+                          <ThemedText style={styles.exerciseMetaText}>
+                            Sets: {exercise.sets.match(/(\d+)[–-](\d+)/) ? exercise.sets.match(/(\d+)[–-](\d+)/)![2] : exercise.sets.match(/(\d+)/)?.[1] || exercise.sets}
+                          </ThemedText>
+                        )}
+                        {exercise.reps && (
+                          <ThemedText style={styles.exerciseMetaText}>
+                            Reps: {exercise.reps.match(/(\d+)[–-](\d+)/) ? exercise.reps.match(/(\d+)[–-](\d+)/)![2] : exercise.reps.match(/(\d+)/)?.[1] || exercise.reps}
+                          </ThemedText>
+                        )}
+                        {exercise.holdTime && (
+                          <ThemedText style={styles.exerciseMetaText}>Hold: {exercise.holdTime}</ThemedText>
+                        )}
+                      </View>
+                    )}
+                    
+                    {exercise.notes && (
+                      <ThemedText style={styles.exerciseNotes}>Note: {exercise.notes}</ThemedText>
+                    )}
+
+                    <View style={styles.exerciseMeta}>
+                      <ThemedText style={styles.exerciseTime}>
+                        Estimated time: {firstSlot.estimatedMinutes} minutes
+                      </ThemedText>
+                    </View>
+                    <View style={styles.swapButtonWrapper}>
+                      <Button
+                        title="Swap"
+                        onPress={() => handleSwapExercise(firstSlot)}
+                        variant="outline"
+                        style={styles.swapButton}
+                      />
+                    </View>
+                  </ThemedView>
                 </View>
               );
             })}
@@ -232,25 +348,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    paddingTop: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  backButton: {
-    padding: 4,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  placeholder: {
-    width: 32,
-  },
   scrollView: {
     flex: 1,
   },
@@ -285,6 +382,12 @@ const styles = StyleSheet.create({
   summaryText: {
     fontSize: 14,
     opacity: 0.7,
+    marginBottom: 4,
+  },
+  summaryFormat: {
+    fontSize: 14,
+    opacity: 0.7,
+    fontStyle: 'italic',
   },
   sectionTitle: {
     fontSize: 20,
@@ -292,6 +395,61 @@ const styles = StyleSheet.create({
   },
   exerciseCard: {
     marginBottom: 20,
+  },
+  exerciseCardInner: {
+    padding: 16,
+    borderRadius: 12,
+  },
+  exerciseTitle: {
+    fontSize: 18,
+    marginBottom: 4,
+  },
+  exerciseBodyAreas: {
+    fontSize: 14,
+    opacity: 0.7,
+    marginBottom: 12,
+  },
+  exerciseDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+    opacity: 0.8,
+  },
+  exerciseTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  exerciseTag: {
+    backgroundColor: '#e3f2fd',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  intensityTag: {
+    backgroundColor: '#fff3e0',
+  },
+  exerciseTagText: {
+    fontSize: 12,
+    color: '#1976d2',
+    fontWeight: '500',
+  },
+  exerciseMetaInfo: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 8,
+  },
+  exerciseMetaText: {
+    fontSize: 12,
+    opacity: 0.6,
+  },
+  exerciseNotes: {
+    fontSize: 12,
+    opacity: 0.6,
+    fontStyle: 'italic',
+    marginTop: 8,
   },
   exerciseMeta: {
     marginTop: 12,
