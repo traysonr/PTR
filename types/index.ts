@@ -49,6 +49,7 @@ export interface WeekPlan {
   startDate: string; // ISO date string (YYYY-MM-DD) - first day of the week
   endDate: string; // ISO date string (YYYY-MM-DD) - last day of the week (7 days after start)
   scheduleStyle: ScheduleStyle;
+  routineId?: string; // routine used to create this plan (if applicable)
   selectedExerciseIds: string[]; // Exercises selected for this week
   dailyTimeWindow?: {
     minMinutes: number; // Minimum total exercise time per day

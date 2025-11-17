@@ -1,27 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, FlatList, Alert, Modal, TouchableOpacity } from 'react-native';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { ExerciseCard } from '@/components/ExerciseCard';
 import { Button } from '@/components/Button';
-import { Checkbox } from '@/components/Checkbox';
-import { TextInput } from '@/components/TextInput';
+import { ExerciseCard } from '@/components/ExerciseCard';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { useExercises } from '@/hooks/useExercises';
-import { useWeekPlans } from '@/hooks/useWeekPlans';
 import { useNotifications } from '@/hooks/useNotifications';
-import { WeekPlan, ScheduleStyle, ScheduledSession } from '@/types';
+import { useRoutines } from '@/hooks/useRoutines';
+import { useWeekPlans } from '@/hooks/useWeekPlans';
+import { ScheduledSession, WeekPlan } from '@/types';
 import { Exercise } from '@/types/exercise';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Animated, FlatList, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function CalendarScreen() {
   const { allExercises, getExerciseById } = useExercises();
   const {
+    weekPlans,
     activePlan,
     loading: planLoading,
-    createWeekPlan,
     updateWeekPlan,
-    autoPopulateSchedule,
+    deleteWeekPlan,
   } = useWeekPlans();
+  const { routines, activeRoutine } = useRoutines();
   const { scheduleSessionNotifications, rescheduleAllNotifications } = useNotifications();
 
   // Get today's date in local timezone (YYYY-MM-DD format)
@@ -33,45 +34,133 @@ export default function CalendarScreen() {
     return `${year}-${month}-${day}`;
   };
 
-  // State for new plan creation
-  const [showPlanModal, setShowPlanModal] = useState(false);
-  const [selectedStartDate, setSelectedStartDate] = useState<string>(getTodayDateString());
-  const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
-  const [scheduleStyle, setScheduleStyle] = useState<ScheduleStyle>('user-schedule');
-  const [timeWindow, setTimeWindow] = useState({ minMinutes: 15, maxMinutes: 60 });
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null); // For user-schedule mode
+  const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
 
-  // Generate the 7 days of the week from start date
-  const generateWeekDates = (startDate: string): string[] => {
-    const dates: string[] = [];
-    const start = new Date(startDate);
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(start);
-      date.setDate(start.getDate() + i);
+const formatDateKey = (date: Date): string => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const day = String(date.getDate()).padStart(2, '0');
-      dates.push(`${year}-${month}-${day}`);
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateLocal = (value: string): Date => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const dayMs = 1000 * 60 * 60 * 24;
+
+const generateMonthMatrix = (monthDate: Date, todayString: string) => {
+  const firstOfMonth = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const startOfGrid = new Date(firstOfMonth);
+  const startDay = firstOfMonth.getDay();
+  startOfGrid.setDate(firstOfMonth.getDate() - startDay);
+
+  const matrix: Array<
+    Array<{ dateString: string; displayNumber: number; isCurrentMonth: boolean; isToday: boolean }>
+  > = [];
+
+  const cursor = new Date(startOfGrid);
+
+  for (let week = 0; week < 6; week++) {
+    const weekRow: Array<{
+      dateString: string;
+      displayNumber: number;
+      isCurrentMonth: boolean;
+      isToday: boolean;
+    }> = [];
+
+    for (let day = 0; day < 7; day++) {
+      const dateString = formatDateKey(cursor);
+      weekRow.push({
+        dateString,
+        displayNumber: cursor.getDate(),
+        isCurrentMonth: cursor.getMonth() === monthDate.getMonth(),
+        isToday: dateString === todayString,
+      });
+      cursor.setDate(cursor.getDate() + 1);
     }
 
-    return dates;
+    matrix.push(weekRow);
+  }
+
+  return matrix;
+};
+
+const formatMonthLabel = (date: Date) => {
+  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+};
+
+type CalendarDay = {
+  dateString: string;
+  displayNumber: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+};
+
+type CalendarDayCellProps = {
+  day: CalendarDay;
+  hasSessions: boolean;
+  onPress: () => void;
+};
+
+const CalendarDayCell = ({ day, hasSessions, onPress }: CalendarDayCellProps) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let loop: Animated.CompositeAnimation | null = null;
+    if (hasSessions) {
+      loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scale, { toValue: 1.05, duration: 900, useNativeDriver: true }),
+          Animated.timing(scale, { toValue: 1, duration: 900, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+    }
+    return () => {
+      if (loop) {
+        loop.stop();
+      }
+      scale.setValue(1);
+    };
+  }, [hasSessions, scale]);
+
+  return (
+    <TouchableOpacity
+      style={styles.dayCellTouchable}
+      activeOpacity={0.85}
+      onPress={onPress}
+      disabled={!hasSessions}
+    >
+      <Animated.View
+        style={[
+          styles.dayCell,
+          !day.isCurrentMonth && styles.dayCellOutside,
+          day.isToday && styles.dayCellToday,
+          hasSessions && styles.dayCellActive,
+          hasSessions && { transform: [{ scale }] },
+        ]}
+      >
+        <ThemedText
+          style={[
+            styles.dayCellText,
+            !day.isCurrentMonth && styles.dayCellTextOutside,
+            hasSessions && styles.dayCellTextActive,
+          ]}
+        >
+          {day.displayNumber}
+        </ThemedText>
+      </Animated.View>
+    </TouchableOpacity>
+  );
   };
 
   // Get sessions for a specific date from the active plan
-  const getSessionsForDate = (date: string): Array<{ session: ScheduledSession; exercise: Exercise }> => {
-    if (!activePlan) return [];
-
-    return activePlan.scheduledSessions
-      .filter((s) => s.date === date)
-      .map((session) => ({
-        session,
-        exercise: getExerciseById(session.exerciseId)!,
-      }))
-      .filter((item) => item.exercise !== undefined);
-  };
-
   // Check if a session is completed (for live-logging mode)
   const isSessionCompleted = (sessionId: string): boolean => {
     return activePlan?.completedSessions.includes(sessionId) || false;
@@ -101,44 +190,6 @@ export default function CalendarScreen() {
       month: 'long',
       day: 'numeric',
     });
-  };
-
-  // Create new week plan
-  const handleCreatePlan = async () => {
-    if (selectedExerciseIds.length === 0) {
-      Alert.alert('Selection Required', 'Please select at least one exercise for your week.');
-      return;
-    }
-
-    const plan = await createWeekPlan(
-      selectedStartDate,
-      scheduleStyle,
-      selectedExerciseIds,
-      scheduleStyle === 'auto-populate' ? timeWindow : undefined
-    );
-
-    if (plan) {
-      // If auto-populate, generate the schedule
-      if (scheduleStyle === 'auto-populate') {
-        const sessions = autoPopulateSchedule(plan, allExercises);
-        plan.scheduledSessions = sessions;
-        await updateWeekPlan(plan);
-
-        // Schedule notifications for all sessions
-        for (const session of sessions) {
-          const exercise = getExerciseById(session.exerciseId);
-          if (exercise) {
-            await scheduleSessionNotifications(session, exercise);
-          }
-        }
-      }
-
-      setShowPlanModal(false);
-      setSelectedExerciseIds([]);
-      Alert.alert('Success', 'Week plan created!');
-    } else {
-      Alert.alert('Error', 'Failed to create week plan. Please try again.');
-    }
   };
 
   // Add exercise to specific day (user-schedule mode or live-logging mode)
@@ -225,12 +276,44 @@ export default function CalendarScreen() {
     await updateWeekPlan(updatedPlan);
   };
 
-  // Toggle exercise selection
-  const toggleExerciseSelection = (exerciseId: string) => {
-    setSelectedExerciseIds((prev) =>
-      prev.includes(exerciseId) ? prev.filter((id) => id !== exerciseId) : [...prev, exerciseId]
-    );
+  useEffect(() => {
+    if (activePlan) {
+      setCurrentMonthDate(parseDateLocal(activePlan.startDate));
+    }
+  }, [activePlan?.startDate]);
+
+  const describeScheduleStyle = (style?: string) => {
+    switch (style) {
+      case 'auto-populate':
+        return '🤖 Auto Populate';
+      case 'live-logging':
+        return '📝 Live Logging';
+      default:
+        return '📅 User Schedule';
+    }
   };
+
+  const hasSessionsOnDate = (dateString: string): boolean => {
+    return weekPlans.some((plan) => plan.scheduledSessions.some((session) => session.date === dateString));
+  };
+
+  const findPlanForDate = (dateString: string): WeekPlan | null => {
+    const target = parseDateLocal(dateString);
+    for (const plan of weekPlans) {
+      const start = parseDateLocal(plan.startDate);
+      const end = parseDateLocal(plan.endDate);
+      if (target >= start && target <= end) {
+        return plan;
+      }
+    }
+    return null;
+  };
+
+  const todayString = getTodayDateString();
+  const monthMatrix = useMemo(
+    () => generateMonthMatrix(currentMonthDate, todayString),
+    [currentMonthDate, todayString]
+  );
 
   if (planLoading) {
     return (
@@ -240,296 +323,127 @@ export default function CalendarScreen() {
     );
   }
 
-  // No active plan - show plan creation modal
-  if (!activePlan) {
-    const weekDates = generateWeekDates(selectedStartDate);
+  const handleChangeMonth = (direction: 'prev' | 'next') => {
+    setCurrentMonthDate((prev) => {
+      const nextMonth = new Date(prev);
+      nextMonth.setMonth(prev.getMonth() + (direction === 'next' ? 1 : -1), 1);
+      return nextMonth;
+    });
+  };
 
-    return (
-      <ThemedView style={styles.container}>
-        <View style={styles.header}>
-          <ThemedText type="title" style={styles.title}>
-            Plan Your Week
-          </ThemedText>
-          <ThemedText style={styles.subtitle}>
-            Create a new week plan to get started
-          </ThemedText>
-        </View>
+  const handleOpenDay = (dateString: string) => {
+    const planForDate = findPlanForDate(dateString);
+    if (!planForDate) {
+      Alert.alert('No Routine', 'No routine is scheduled for this day.');
+      return;
+    }
 
-        <View style={styles.emptyState}>
-          <Ionicons name="calendar-outline" size={64} color="#999" />
-          <ThemedText style={styles.emptyText}>
-            No week plan active. Create a new plan to start scheduling exercises.
-          </ThemedText>
-          <Button title="Create Week Plan" onPress={() => setShowPlanModal(true)} style={styles.emptyButton} />
-        </View>
+    const target = parseDateLocal(dateString);
+    const start = parseDateLocal(planForDate.startDate);
+    const dayIndex = Math.round((target.getTime() - start.getTime()) / dayMs);
 
-        {/* Plan Creation Modal */}
-        <Modal visible={showPlanModal} animationType="slide" presentationStyle="pageSheet">
-          <ThemedView style={styles.modalContainer}>
-            <ScrollView contentContainerStyle={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <ThemedText type="title" style={styles.modalTitle}>
-                  Create Week Plan
-                </ThemedText>
-                <Button
-                  title="Close"
-                  variant="outline"
-                  onPress={() => setShowPlanModal(false)}
-                  style={styles.closeButton}
-                />
-              </View>
+    if (dayIndex < 0 || dayIndex > 6) {
+      Alert.alert('Outside Plan Window', 'This date is outside the selected routine week.');
+      return;
+    }
 
-              {/* Start Date Selection */}
-              <ThemedView style={styles.section}>
-                <ThemedText type="subtitle" style={styles.sectionTitle}>
-                  Start Date
-                </ThemedText>
-                <ThemedText style={styles.sectionDescription}>
-                  Select the first day of your week (today or later)
-                </ThemedText>
-                <TextInput
-                  value={selectedStartDate}
-                  onChangeText={setSelectedStartDate}
-                  placeholder="YYYY-MM-DD"
-                  label="Start Date"
-                />
-              </ThemedView>
+    const routineForPlan = planForDate.routineId
+      ? routines.find((routine) => routine.id === planForDate.routineId) || null
+      : activeRoutine;
 
-              {/* Exercise Selection */}
-              <ThemedView style={styles.section}>
-                <ThemedText type="subtitle" style={styles.sectionTitle}>
-                  Select Exercises
-                </ThemedText>
-                <ThemedText style={styles.sectionDescription}>
-                  Choose exercises for this week ({selectedExerciseIds.length} selected)
-                </ThemedText>
-                <Button
-                  title="Select Exercises"
-                  variant="outline"
-                  onPress={() => setShowExerciseSelector(true)}
-                  style={styles.selectButton}
-                />
-              </ThemedView>
+    if (!routineForPlan) {
+      Alert.alert('Missing Routine', 'The routine for this plan is no longer available.');
+      return;
+    }
 
-              {/* Schedule Style Selection */}
-              <ThemedView style={styles.section}>
-                <ThemedText type="subtitle" style={styles.sectionTitle}>
-                  Schedule Style
-                </ThemedText>
+    router.push(`/routines/${routineForPlan.id}/day/${dayIndex}`);
+  };
 
-                <Checkbox
-                  label="Auto Populate - App distributes exercises automatically within time limits"
-                  checked={scheduleStyle === 'auto-populate'}
-                  onToggle={() => setScheduleStyle('auto-populate')}
-                />
-                <Checkbox
-                  label="Live Logging - Log exercises as you complete them throughout the week"
-                  checked={scheduleStyle === 'live-logging'}
-                  onToggle={() => setScheduleStyle('live-logging')}
-                />
-                <Checkbox
-                  label="User Schedule - Manually assign exercises to specific days"
-                  checked={scheduleStyle === 'user-schedule'}
-                  onToggle={() => setScheduleStyle('user-schedule')}
-                />
+  const handleAddRoutine = () => {
+    router.push('/routines');
+  };
 
-                {scheduleStyle === 'auto-populate' && (
-                  <View style={styles.timeWindowSection}>
-                    <ThemedText style={styles.timeWindowLabel}>Daily Time Window (minutes)</ThemedText>
-                    <View style={styles.timeWindowInputs}>
-                      <View style={styles.timeInputContainer}>
-                        <ThemedText style={styles.timeInputLabel}>Min:</ThemedText>
-                        <TextInput
-                          value={String(timeWindow.minMinutes)}
-                          onChangeText={(text) =>
-                            setTimeWindow({ ...timeWindow, minMinutes: parseInt(text) || 15 })
-                          }
-                          keyboardType="numeric"
-                          style={styles.timeInput}
-                        />
-                      </View>
-                      <View style={styles.timeInputContainer}>
-                        <ThemedText style={styles.timeInputLabel}>Max:</ThemedText>
-                        <TextInput
-                          value={String(timeWindow.maxMinutes)}
-                          onChangeText={(text) =>
-                            setTimeWindow({ ...timeWindow, maxMinutes: parseInt(text) || 60 })
-                          }
-                          keyboardType="numeric"
-                          style={styles.timeInput}
-                        />
-                      </View>
-                    </View>
-                  </View>
-                )}
-              </ThemedView>
+  const handleClearPlan = () => {
+    if (weekPlans.length === 0) return;
+    Alert.alert('Clear Calendar', 'This will delete all scheduled routines from the calendar.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          await Promise.all(weekPlans.map((plan) => deleteWeekPlan(plan.id)));
+          setCurrentMonthDate(new Date());
+        },
+      },
+    ]);
+  };
 
-              <Button title="Create Plan" onPress={handleCreatePlan} style={styles.createButton} />
-            </ScrollView>
-          </ThemedView>
-        </Modal>
-
-        {/* Exercise Selection Modal */}
-        <Modal visible={showExerciseSelector} animationType="slide" presentationStyle="pageSheet">
-          <ThemedView style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <ThemedText type="title" style={styles.modalTitle}>
-                Select Exercises
-              </ThemedText>
-              <Button
-                title="Done"
-                variant="outline"
-                onPress={() => setShowExerciseSelector(false)}
-                style={styles.closeButton}
-              />
-            </View>
-            <FlatList
-              data={allExercises}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  onPress={() => toggleExerciseSelection(item.id)}
-                  style={styles.exerciseSelectItem}
-                >
-                  <Checkbox
-                    label={item.name}
-                    checked={selectedExerciseIds.includes(item.id)}
-                    onToggle={() => toggleExerciseSelection(item.id)}
-                  />
-                  <ThemedText style={styles.exerciseBodyPart}>
-                    {item.bodyAreas.map((area) => {
-                      const areaLabels: Record<string, string> = {
-                        neck: 'Neck',
-                        upper_back: 'Upper Back',
-                        lower_back: 'Lower Back',
-                        shoulder: 'Shoulder',
-                        hip: 'Hip',
-                        knee: 'Knee',
-                        ankle: 'Ankle',
-                        wrist: 'Wrist',
-                        elbow: 'Elbow',
-                        core: 'Core',
-                      };
-                      return areaLabels[area] || area;
-                    }).join(', ')}
-                  </ThemedText>
-                </TouchableOpacity>
-              )}
-              contentContainerStyle={styles.modalListContent}
-            />
-          </ThemedView>
-        </Modal>
-      </ThemedView>
-    );
-  }
-
-  // Active plan exists - show week view
-  const weekDates = generateWeekDates(activePlan.startDate);
+  const scheduleLabel =
+    weekPlans.length === 0
+      ? 'No routines scheduled'
+      : weekPlans.length === 1
+        ? describeScheduleStyle(weekPlans[0].scheduleStyle)
+        : `${weekPlans.length} routines scheduled`;
 
   return (
     <ThemedView style={styles.container}>
+      <ScrollView style={styles.monthScroll} contentContainerStyle={styles.monthScrollContent}>
       <View style={styles.header}>
         <ThemedText type="title" style={styles.title}>
-          Your Week Plan
+            Monthly Schedule
         </ThemedText>
-        <ThemedText style={styles.subtitle}>
-          {formatDateHeader(activePlan.startDate)} - {formatDateHeader(activePlan.endDate)}
-        </ThemedText>
-        <ThemedText style={styles.scheduleStyleBadge}>
-          {activePlan.scheduleStyle === 'auto-populate' && '🤖 Auto Populate'}
-          {activePlan.scheduleStyle === 'live-logging' && '📝 Live Logging'}
-          {activePlan.scheduleStyle === 'user-schedule' && '📅 User Schedule'}
-        </ThemedText>
+          <View style={styles.monthControls}>
+            <TouchableOpacity style={styles.monthButton} onPress={() => handleChangeMonth('prev')}>
+              <Ionicons name="chevron-back" size={20} color="#007AFF" />
+            </TouchableOpacity>
+            <ThemedText style={styles.monthTitle}>{formatMonthLabel(currentMonthDate)}</ThemedText>
+            <TouchableOpacity style={styles.monthButton} onPress={() => handleChangeMonth('next')}>
+              <Ionicons name="chevron-forward" size={20} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
+          <ThemedText style={styles.scheduleStyleBadge}>{scheduleLabel}</ThemedText>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity style={styles.addRoutineButton} onPress={handleAddRoutine}>
+              <Ionicons name="add-circle-outline" size={18} color="#007AFF" />
+              <ThemedText style={styles.addRoutineText}>Add Routine</ThemedText>
+            </TouchableOpacity>
+            {weekPlans.length > 0 && (
+              <TouchableOpacity style={styles.clearButton} onPress={handleClearPlan}>
+                <Ionicons name="trash-outline" size={16} color="#d9534f" />
+                <ThemedText style={styles.clearButtonText}>Clear</ThemedText>
+              </TouchableOpacity>
+            )}
+          </View>
       </View>
 
-      <ScrollView style={styles.weekView} contentContainerStyle={styles.weekContent}>
-        {weekDates.map((date) => {
-          const daySessions = getSessionsForDate(date);
-          const totalTime = daySessions.reduce((sum, item) => {
-            return sum + (item.exercise.duration || 10);
-          }, 0);
-
+        <View style={styles.calendarContainer}>
+          <View style={styles.dayLabelsRow}>
+            {DAY_LABELS.map((label) => (
+              <ThemedText key={label} style={styles.dayLabelText}>
+                {label}
+              </ThemedText>
+            ))}
+          </View>
+          {monthMatrix.map((week, weekIndex) => (
+            <View key={`week-${weekIndex}`} style={styles.weekRow}>
+              {week.map((day) => {
+                const hasSessions = hasSessionsOnDate(day.dateString);
           return (
-            <ThemedView key={date} style={styles.dayCard}>
-              <View style={styles.dayHeader}>
-                <ThemedText type="subtitle" style={styles.dayTitle}>
-                  {formatDateHeader(date)}
-                </ThemedText>
-                {activePlan.scheduleStyle === 'user-schedule' && (
-                  <Button
-                    title="Add"
-                    onPress={() => {
-                      setSelectedDay(date);
-                      setShowExerciseSelector(true);
-                    }}
-                    style={styles.addDayButton}
+                  <CalendarDayCell
+                    key={day.dateString}
+                    day={day}
+                    hasSessions={hasSessions}
+                    onPress={() => handleOpenDay(day.dateString)}
                   />
-                )}
-              </View>
-              <ThemedText style={styles.daySubtitle}>{formatDateDisplay(date)}</ThemedText>
-              {daySessions.length > 0 && (
-                <ThemedText style={styles.totalTime}>Total: {totalTime} min</ThemedText>
-              )}
-
-              {daySessions.length > 0 ? (
-                <View style={styles.sessionsList}>
-                  {daySessions.map(({ session, exercise }) => {
-                    const isCompleted =
-                      activePlan.scheduleStyle === 'live-logging' && isSessionCompleted(session.id);
-
-                    return (
-                      <View key={session.id} style={styles.sessionCard}>
-                        {activePlan.scheduleStyle === 'live-logging' && (
-                          <TouchableOpacity
-                            onPress={() => handleToggleCompletion(session.id)}
-                            style={styles.completionCheckbox}
-                          >
-                            <Ionicons
-                              name={isCompleted ? 'checkbox' : 'square-outline'}
-                              size={24}
-                              color={isCompleted ? '#34c759' : '#999'}
-                            />
-                          </TouchableOpacity>
-                        )}
-                        <View style={styles.sessionContent}>
-                          <ExerciseCard exercise={exercise} showDescription={false} />
-                          {(activePlan.scheduleStyle === 'user-schedule' ||
-                            activePlan.scheduleStyle === 'auto-populate') && (
-                            <Button
-                              title="Remove"
-                              variant="danger"
-                              onPress={() => handleRemoveExercise(session.id)}
-                              style={styles.removeButton}
-                            />
-                          )}
-                        </View>
-                      </View>
                     );
                   })}
                 </View>
-              ) : (
-                <View style={styles.emptyDay}>
-                  <ThemedText style={styles.emptyDayText}>No exercises scheduled</ThemedText>
-                  {activePlan.scheduleStyle === 'user-schedule' && (
-                    <Button
-                      title="Add Exercise"
-                      variant="outline"
-                      onPress={() => {
-                        setSelectedDay(date);
-                        setShowExerciseSelector(true);
-                      }}
-                      style={styles.addDayButton}
-                    />
-                  )}
+          ))}
                 </View>
-              )}
-            </ThemedView>
-          );
-        })}
       </ScrollView>
 
       {/* Exercise Selection for User Schedule */}
-      {activePlan.scheduleStyle === 'user-schedule' && selectedDay && (
+      {activePlan?.scheduleStyle === 'user-schedule' && selectedDay && (
         <Modal visible={showExerciseSelector} animationType="slide" presentationStyle="pageSheet">
           <ThemedView style={styles.modalContainer}>
             <View style={styles.modalHeader}>
@@ -566,7 +480,7 @@ export default function CalendarScreen() {
       )}
 
       {/* Live Logging - Exercise Selection */}
-      {activePlan.scheduleStyle === 'live-logging' && showExerciseSelector && (
+      {activePlan?.scheduleStyle === 'live-logging' && showExerciseSelector && (
         <Modal visible={showExerciseSelector} animationType="slide" presentationStyle="pageSheet">
           <ThemedView style={styles.modalContainer}>
             <View style={styles.modalHeader}>
@@ -607,7 +521,7 @@ export default function CalendarScreen() {
       )}
 
       {/* Floating action button for live logging */}
-      {activePlan.scheduleStyle === 'live-logging' && (
+      {activePlan?.scheduleStyle === 'live-logging' && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => setShowExerciseSelector(true)}
@@ -624,12 +538,33 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 60,
   },
+  monthScroll: {
+    flex: 1,
+  },
+  monthScrollContent: {
+    paddingBottom: 40,
+  },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 16,
   },
   title: {
     fontSize: 28,
+  },
+  monthControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+  },
+  monthButton: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: '#f0f4ff',
+  },
+  monthTitle: {
+    fontSize: 18,
+    fontWeight: '600',
   },
   subtitle: {
     fontSize: 14,
@@ -640,6 +575,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.6,
     marginTop: 4,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+  },
+  addRoutineButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#e6f0ff',
+  },
+  addRoutineText: {
+    color: '#007AFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#fdecea',
+  },
+  clearButtonText: {
+    color: '#d9534f',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   emptyState: {
     flex: 1,
@@ -658,31 +629,58 @@ const styles = StyleSheet.create({
   emptyButton: {
     minWidth: 150,
   },
-  weekView: {
-    flex: 1,
+  calendarContainer: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
   },
-  weekContent: {
-    padding: 20,
-  },
-  dayCard: {
-    marginBottom: 20,
-    padding: 16,
-    borderRadius: 12,
-  },
-  dayHeader: {
+  dayLabelsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    paddingHorizontal: 8,
+    marginBottom: 6,
   },
-  dayTitle: {
-    fontSize: 18,
+  dayLabelText: {
     flex: 1,
+    textAlign: 'center',
+    fontSize: 12,
+    opacity: 0.6,
   },
-  daySubtitle: {
-    fontSize: 14,
-    opacity: 0.7,
+  weekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 8,
+  },
+  dayCellTouchable: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dayCell: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  dayCellOutside: {
+    backgroundColor: '#fafafa',
+  },
+  dayCellToday: {
+    borderWidth: 2,
+    borderColor: '#007AFF',
+  },
+  dayCellActive: {
+    backgroundColor: '#d4f7d0',
+  },
+  dayCellText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dayCellTextOutside: {
+    opacity: 0.4,
+  },
+  dayCellTextActive: {
+    color: '#0a5c24',
   },
   totalTime: {
     fontSize: 12,
@@ -738,6 +736,11 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     flex: 1,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    opacity: 0.7,
+    marginBottom: 8,
   },
   closeButton: {
     minWidth: 80,

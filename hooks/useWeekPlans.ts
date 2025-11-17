@@ -1,30 +1,37 @@
-import { useState, useEffect, useCallback } from 'react';
-import { WeekPlan, ScheduleStyle, ScheduledSession } from '@/types';
-import { Routine } from '@/types';
-import { Exercise } from '@/types/exercise';
 import { storageService } from '@/services/storage';
+import { Routine, ScheduleStyle, ScheduledSession, WeekPlan } from '@/types';
+import { Exercise } from '@/types/exercise';
+import { useCallback, useEffect, useState } from 'react';
+
+const parseDate = (value: string): Date => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
 
 export function useWeekPlans() {
+  const [weekPlans, setWeekPlans] = useState<WeekPlan[]>([]);
   const [activePlan, setActivePlan] = useState<WeekPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    loadActivePlan();
-  }, []);
-
-  const loadActivePlan = useCallback(async () => {
+  const loadPlans = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const plan = await storageService.getActiveWeekPlan();
-      setActivePlan(plan);
+      const plans = await storageService.getWeekPlans();
+      const active = await storageService.getActiveWeekPlan();
+      setWeekPlans(plans);
+      setActivePlan(active);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to load week plan'));
+      setError(err instanceof Error ? err : new Error('Failed to load week plans'));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    loadPlans();
+  }, [loadPlans]);
 
   const createWeekPlan = useCallback(
     async (
@@ -37,7 +44,7 @@ export function useWeekPlans() {
         setError(null);
 
         // Calculate end date (7 days after start)
-        const start = new Date(startDate);
+        const start = parseDate(startDate);
         const end = new Date(start);
         end.setDate(end.getDate() + 6); // 7 days total (0-6 = 7 days)
         const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
@@ -58,6 +65,7 @@ export function useWeekPlans() {
 
         await storageService.saveWeekPlan(plan);
         await storageService.setActiveWeekPlan(plan.id);
+        setWeekPlans((prev) => [...prev.filter((p) => p.id !== plan.id), plan]);
         setActivePlan(plan);
         return plan;
       } catch (err) {
@@ -73,6 +81,7 @@ export function useWeekPlans() {
       setError(null);
       plan.updatedAt = new Date().toISOString();
       await storageService.saveWeekPlan(plan);
+      setWeekPlans((prev) => prev.map((p) => (p.id === plan.id ? plan : p)));
       if (plan.id === activePlan?.id) {
         setActivePlan(plan);
       }
@@ -87,6 +96,7 @@ export function useWeekPlans() {
     try {
       setError(null);
       await storageService.deleteWeekPlan(planId);
+      setWeekPlans((prev) => prev.filter((p) => p.id !== planId));
       if (planId === activePlan?.id) {
         setActivePlan(null);
       }
@@ -107,7 +117,7 @@ export function useWeekPlans() {
         
         selectedExercises.forEach((exercise, index) => {
           const dayIndex = index % 7;
-          const date = new Date(plan.startDate);
+          const date = parseDate(plan.startDate);
           date.setDate(date.getDate() + dayIndex);
           const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
           
@@ -129,7 +139,7 @@ export function useWeekPlans() {
 
       // Initialize daily totals
       for (let i = 0; i < 7; i++) {
-        const date = new Date(plan.startDate);
+        const date = parseDate(plan.startDate);
         date.setDate(date.getDate() + i);
         const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
         dailyTotals[dateString] = 0;
@@ -193,7 +203,7 @@ export function useWeekPlans() {
         setError(null);
 
         // Calculate end date (7 days after start)
-        const start = new Date(startDate);
+        const start = parseDate(startDate);
         const end = new Date(start);
         end.setDate(end.getDate() + 6); // 7 days total (0-6 = 7 days)
         const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
@@ -218,6 +228,7 @@ export function useWeekPlans() {
           startDate,
           endDate,
           scheduleStyle: 'user-schedule', // Routine-based plans are user-scheduled
+          routineId: routine.id,
           selectedExerciseIds: routine.exerciseIds,
           dailyTimeWindow: {
             minMinutes: Math.max(15, routine.maxMinutesPerDay - 10),
@@ -231,6 +242,7 @@ export function useWeekPlans() {
 
         await storageService.saveWeekPlan(plan);
         await storageService.setActiveWeekPlan(plan.id);
+        setWeekPlans((prev) => [...prev.filter((p) => p.id !== plan.id), plan]);
         setActivePlan(plan);
         return plan;
       } catch (err) {
@@ -242,6 +254,7 @@ export function useWeekPlans() {
   );
 
   return {
+    weekPlans,
     activePlan,
     loading,
     error,
@@ -249,7 +262,7 @@ export function useWeekPlans() {
     createWeekPlanFromRoutine,
     updateWeekPlan,
     deleteWeekPlan,
-    reloadActivePlan: loadActivePlan,
+    reloadActivePlan: loadPlans,
     autoPopulateSchedule,
   };
 }
