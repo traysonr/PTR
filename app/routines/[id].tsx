@@ -17,8 +17,8 @@ export default function RoutineDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { routines, saveRoutine, isLoading } = useRoutines();
   const { allExercises, getExerciseById } = useExercises();
-  const { createWeekPlanFromRoutine } = useWeekPlans();
-  const { scheduleSessionNotifications } = useNotifications();
+  const { createWeekPlanFromRoutine, weekPlans } = useWeekPlans();
+  const { rescheduleAllNotifications } = useNotifications();
 
   const [routine, setRoutine] = useState(routines.find((r) => r.id === id));
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -148,14 +148,9 @@ export default function RoutineDetailScreen() {
       try {
         const weekPlan = await createWeekPlanFromRoutine(routine, startDateString);
         if (weekPlan) {
-          // Schedule notifications for all sessions
-          for (const session of weekPlan.scheduledSessions) {
-            const exercise = getExerciseById(session.exerciseId);
-            if (exercise) {
-              await scheduleSessionNotifications(session, exercise);
-            }
-          }
-          
+          const mergedPlans = [...weekPlans.filter((plan) => plan.id !== weekPlan.id), weekPlan];
+          await rescheduleAllNotifications(mergedPlans.flatMap((plan) => plan.scheduledSessions));
+
           Alert.alert('Success', 'Your routine has been scheduled!', [
             { text: 'OK', onPress: () => router.push('/(tabs)/calendar') },
           ]);

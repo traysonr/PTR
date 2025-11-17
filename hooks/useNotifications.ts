@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
 import { notificationService } from '@/services/notifications';
 import { storageService } from '@/services/storage';
-import { ScheduledSession, Exercise } from '@/types';
+import { ScheduledSession } from '@/types';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useNotifications() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -72,30 +72,14 @@ export function useNotifications() {
     }
   }, []);
 
-  const scheduleSessionNotifications = useCallback(
-    async (session: ScheduledSession, exercise: Exercise): Promise<string[]> => {
-      if (!notificationsEnabled || !hasPermission) {
-        return [];
-      }
-
-      try {
-        return await notificationService.scheduleSessionNotifications(session, exercise);
-      } catch (error) {
-        console.error('Error scheduling session notifications:', error);
-        return [];
-      }
-    },
-    [notificationsEnabled, hasPermission]
-  );
-
   const rescheduleAllNotifications = useCallback(
-    async (sessions: ScheduledSession[], exercises: Exercise[]): Promise<void> => {
+    async (sessions: ScheduledSession[]): Promise<void> => {
       if (!notificationsEnabled || !hasPermission) {
         return;
       }
 
       try {
-        await notificationService.rescheduleAllNotifications(sessions, exercises);
+        await notificationService.rescheduleAllNotifications(sessions);
       } catch (error) {
         console.error('Error rescheduling all notifications:', error);
       }
@@ -110,7 +94,6 @@ export function useNotifications() {
     requestPermissions,
     enableNotifications,
     disableNotifications,
-    scheduleSessionNotifications,
     rescheduleAllNotifications,
     reload: initializeNotifications,
   };

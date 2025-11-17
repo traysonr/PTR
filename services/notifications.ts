@@ -1,5 +1,5 @@
+import { ScheduledSession } from '@/types';
 import * as Notifications from 'expo-notifications';
-import { ScheduledSession, Exercise } from '@/types';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -9,6 +9,14 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
+
+const REMINDER_HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+const REMINDER_MINUTE = 43;
+
+const createReminderTimes = (dateString: string): Date[] => {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return REMINDER_HOURS.map((hour) => new Date(year, month - 1, day, hour, REMINDER_MINUTE, 0, 0));
+};
 
 export const notificationService = {
   // Request permissions
@@ -40,75 +48,21 @@ export const notificationService = {
     }
   },
 
-  // Schedule a notification for a session
-  async scheduleSessionNotifications(
-    session: ScheduledSession,
-    exercise: Exercise
-  ): Promise<string[]> {
-    const notificationIds: string[] = [];
+  async scheduleReminderSeries(dateString: string): Promise<void> {
+    const now = new Date();
+    const reminderTimes = createReminderTimes(dateString);
 
-    try {
-      const sessionDate = new Date(session.date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      sessionDate.setHours(0, 0, 0, 0);
+    for (const triggerTime of reminderTimes) {
+      if (triggerTime <= now) continue;
 
-      // Only schedule if session is in the future and within 3 weeks
-      const threeWeeksFromNow = new Date();
-      threeWeeksFromNow.setDate(threeWeeksFromNow.getDate() + 21);
-      
-      if (sessionDate < today || sessionDate > threeWeeksFromNow) {
-        return notificationIds;
-      }
-
-      // Schedule day-before notification (7pm the day before)
-      const dayBefore = new Date(sessionDate);
-      dayBefore.setDate(dayBefore.getDate() - 1);
-      dayBefore.setHours(19, 0, 0, 0); // 7pm
-
-      if (dayBefore > new Date()) {
-        const dayBeforeId = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'PT Session Tomorrow! 🏋️',
-            body: `Don't forget: ${exercise.name} is scheduled for tomorrow.`,
-            data: { sessionId: session.id, type: 'day-before' },
-          },
-          trigger: dayBefore,
-        });
-        notificationIds.push(dayBeforeId);
-      }
-
-      // Schedule day-of notification (9am on the day)
-      const dayOf = new Date(sessionDate);
-      dayOf.setHours(9, 0, 0, 0); // 9am
-
-      if (dayOf > new Date()) {
-        const dayOfId = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'Time for Your PT Session! 💪',
-            body: `${exercise.name} is scheduled for today.`,
-            data: { sessionId: session.id, type: 'day-of' },
-          },
-          trigger: dayOf,
-        });
-        notificationIds.push(dayOf);
-      }
-
-      return notificationIds;
-    } catch (error) {
-      console.error('Error scheduling notifications:', error);
-      return notificationIds;
-    }
-  },
-
-  // Cancel all notifications for a session
-  async cancelSessionNotifications(notificationIds: string[]): Promise<void> {
-    try {
-      for (const id of notificationIds) {
-        await Notifications.cancelScheduledNotificationAsync(id);
-      }
-    } catch (error) {
-      console.error('Error canceling notifications:', error);
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'have you worked out yet??? =)',
+          body: 'Tap to open your calendar and start your routine.',
+          data: { targetTab: 'calendar', scheduledDate: dateString },
+        },
+        trigger: triggerTime,
+      });
     }
   },
 
@@ -122,10 +76,7 @@ export const notificationService = {
   },
 
   // Reschedule all notifications based on current sessions
-  async rescheduleAllNotifications(
-    sessions: ScheduledSession[],
-    exercises: Exercise[]
-  ): Promise<void> {
+  async rescheduleAllNotifications(sessions: ScheduledSession[]): Promise<void> {
     try {
       // Cancel all existing notifications
       await this.cancelAllNotifications();
@@ -137,15 +88,11 @@ export const notificationService = {
         return;
       }
 
-      // Get exercise map for quick lookup
-      const exerciseMap = new Map(exercises.map((e) => [e.id, e]));
+      const uniqueDates = Array.from(new Set(sessions.map((session) => session.date)));
+      uniqueDates.sort();
 
-      // Schedule notifications for all sessions
-      for (const session of sessions) {
-        const exercise = exerciseMap.get(session.exerciseId);
-        if (exercise) {
-          await this.scheduleSessionNotifications(session, exercise);
-        }
+      for (const dateString of uniqueDates) {
+        await this.scheduleReminderSeries(dateString);
       }
     } catch (error) {
       console.error('Error rescheduling all notifications:', error);

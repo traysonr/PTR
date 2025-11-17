@@ -1,4 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -41,6 +42,19 @@ export default function RootLayout() {
 
     checkProfile();
   }, [segments, router]);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const targetTab = response.notification.request.content.data?.targetTab;
+      if (targetTab === 'calendar') {
+        router.push('/(tabs)/calendar');
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [router]);
 
   if (isChecking) {
     return (

@@ -7,7 +7,6 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useRoutines } from '@/hooks/useRoutines';
 import { useWeekPlans } from '@/hooks/useWeekPlans';
 import { ScheduledSession, WeekPlan } from '@/types';
-import { Exercise } from '@/types/exercise';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -23,7 +22,7 @@ export default function CalendarScreen() {
     deleteWeekPlan,
   } = useWeekPlans();
   const { routines, activeRoutine } = useRoutines();
-  const { scheduleSessionNotifications, rescheduleAllNotifications } = useNotifications();
+  const { rescheduleAllNotifications } = useNotifications();
 
   // Get today's date in local timezone (YYYY-MM-DD format)
   const getTodayDateString = (): string => {
@@ -215,11 +214,8 @@ const CalendarDayCell = ({ day, hasSessions, onPress }: CalendarDayCellProps) =>
 
     const success = await updateWeekPlan(updatedPlan);
     if (success) {
-      const exercise = getExerciseById(exerciseId);
-      if (exercise && activePlan.scheduleStyle !== 'live-logging') {
-        // Only schedule notifications for pre-planned sessions, not live-logged ones
-        await scheduleSessionNotifications(newSession, exercise);
-      }
+      const mergedPlans = weekPlans.map((plan) => (plan.id === updatedPlan.id ? updatedPlan : plan));
+      await rescheduleAllNotifications(mergedPlans.flatMap((plan) => plan.scheduledSessions));
       setShowExerciseSelector(false);
       setSelectedDay(null);
       if (activePlan.scheduleStyle === 'live-logging') {
@@ -248,11 +244,8 @@ const CalendarDayCell = ({ day, hasSessions, onPress }: CalendarDayCellProps) =>
           };
 
           await updateWeekPlan(updatedPlan);
-          // Reschedule all notifications
-          await rescheduleAllNotifications(
-            updatedPlan.scheduledSessions,
-            allExercises.filter((e) => updatedPlan.selectedExerciseIds.includes(e.id))
-          );
+          const mergedPlans = weekPlans.map((plan) => (plan.id === updatedPlan.id ? updatedPlan : plan));
+          await rescheduleAllNotifications(mergedPlans.flatMap((plan) => plan.scheduledSessions));
         },
       },
     ]);
@@ -373,6 +366,7 @@ const CalendarDayCell = ({ day, hasSessions, onPress }: CalendarDayCellProps) =>
         onPress: async () => {
           await Promise.all(weekPlans.map((plan) => deleteWeekPlan(plan.id)));
           setCurrentMonthDate(new Date());
+          await rescheduleAllNotifications([]);
         },
       },
     ]);
