@@ -5,7 +5,7 @@ import { ThemedView } from '@/components/themed-view';
 import { useExercises } from '@/hooks/useExercises';
 import { useRoutines } from '@/hooks/useRoutines';
 import { RoutineExerciseSlot } from '@/types';
-import { BodyArea, Exercise, Goal, Intensity } from '@/types/exercise';
+import { BodyArea, Equipment, Exercise, Goal, Intensity } from '@/types/exercise';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useLocalSearchParams } from 'expo-router';
@@ -38,6 +38,19 @@ const intensityLabels: Record<Intensity, string> = {
   medium: 'Medium',
   high: 'High',
 };
+
+const intensityOrder: Intensity[] = ['low', 'medium', 'high'];
+
+function isIntensityCompatible(exerciseIntensity: Intensity, target: Intensity): boolean {
+  if (exerciseIntensity === target) return true;
+  return Math.abs(intensityOrder.indexOf(exerciseIntensity) - intensityOrder.indexOf(target)) <= 1;
+}
+
+function isEquipmentCompatible(exercise: Exercise, equipmentAccess: Equipment[]): boolean {
+  const requiresOnlyBodyweight = exercise.equipment.length === 1 && exercise.equipment[0] === 'none';
+  if (requiresOnlyBodyweight) return true;
+  return exercise.equipment.some((eq) => equipmentAccess.includes(eq));
+}
 
 export default function DayFlowScreen() {
   const { id, dayIndex: dayIndexParam } = useLocalSearchParams<{ id: string; dayIndex: string }>();
@@ -114,11 +127,14 @@ export default function DayFlowScreen() {
     );
 
     const updatedExerciseIds = [...new Set(updatedSlots.map((s) => s.exerciseId))];
+    const updatedTotalWeeklyMinutes = updatedSlots.reduce((sum, s) => sum + s.estimatedMinutes, 0);
 
     const updatedRoutine = {
       ...routine,
       slots: updatedSlots,
       exerciseIds: updatedExerciseIds,
+      totalWeeklyMinutes: updatedTotalWeeklyMinutes,
+      description: `Auto-generated routine for ${routine.daysPerWeek} days/week, ${updatedTotalWeeklyMinutes} minutes/week`,
       updatedAt: new Date().toISOString(),
     };
 
@@ -133,18 +149,68 @@ export default function DayFlowScreen() {
     if (!swapSlot) return [];
 
     const currentExercise = getExerciseById(swapSlot.exerciseId);
-    if (!currentExercise) return allExercises;
+    const profile = routine.profileSnapshot;
+    const equipmentAccess = profile?.equipmentAccess || [];
+    const targetIntensity = profile?.intensity;
+
+    // Start from all exercises; always exclude the current exercise itself
+    const basePool = allExercises.filter((e) => e.id !== swapSlot.exerciseId);
+
+    // If we can't find the current exercise (shouldn't happen), still show a safe pool:
+    // equipment + intensity compatible with the routine profile.
+    if (!currentExercise) {
+      return basePool.filter((e) => {
+        if (targetIntensity && !isIntensityCompatible(e.intensity, targetIntensity)) return false;
+        if (!isEquipmentCompatible(e, equipmentAccess)) return false;
+        return true;
+      });
+    }
 
     const currentMinutes = swapSlot.estimatedMinutes;
     const currentAreas = currentExercise.bodyAreas;
 
-    return allExercises.filter((exercise) => {
+    const scored = basePool
+      .filter((exercise) => {
+        // Keep swaps consistent with the routine profile constraints
+        if (targetIntensity && !isIntensityCompatible(exercise.intensity, targetIntensity)) {
+          return false;
+        }
+        if (!isEquipmentCompatible(exercise, equipmentAccess)) {
+          return false;
+        }
+
       const exerciseMinutes = estimateExerciseMinutes(exercise);
       const hasMatchingArea = exercise.bodyAreas.some((area) => currentAreas.includes(area));
       const timeDiff = Math.abs(exerciseMinutes - currentMinutes);
       
-      return hasMatchingArea && timeDiff <= 5; // Within 5 minutes
-    });
+        // Prefer similar area; allow a wider net if needed
+        return hasMatchingArea && timeDiff <= 10;
+      })
+      .map((exercise) => {
+        const exerciseMinutes = estimateExerciseMinutes(exercise);
+        const hasMatchingArea = exercise.bodyAreas.some((area) => currentAreas.includes(area));
+        const timeDiff = Math.abs(exerciseMinutes - currentMinutes);
+        return { exercise, hasMatchingArea, timeDiff };
+      })
+      .sort((a, b) => {
+        // 1) matching area first, 2) closer time, 3) alphabetical
+        if (a.hasMatchingArea !== b.hasMatchingArea) return a.hasMatchingArea ? -1 : 1;
+        if (a.timeDiff !== b.timeDiff) return a.timeDiff - b.timeDiff;
+        return a.exercise.name.localeCompare(b.exercise.name);
+      })
+      .map((x) => x.exercise);
+
+    // If our "similar" filter is still too strict, fall back to the broader pool
+    // (still respecting equipment + intensity).
+    if (scored.length === 0) {
+      return basePool.filter((e) => {
+        if (targetIntensity && !isIntensityCompatible(e.intensity, targetIntensity)) return false;
+        if (!isEquipmentCompatible(e, equipmentAccess)) return false;
+        return true;
+      });
+    }
+
+    return scored;
   };
 
   const daySlots = getSlotsByDay(dayIndex);
@@ -163,23 +229,26 @@ export default function DayFlowScreen() {
   const uniqueExerciseCount = uniqueExerciseIds.length;
   const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
   
-  // Calculate pattern format (e.g., "ABCABC")
-  const patternRepeats = uniqueExerciseCount > 0 ? Math.floor(daySlots.length / uniqueExerciseCount) : 0;
-  const basePattern = letters.slice(0, uniqueExerciseCount).join('');
+  // Calculate the rep count for each unique exercise
+  const exerciseIdToLetter = new Map<string, string>();
+  const exerciseRepCount = new Map<string, number>();
   
-  let patternLabel = '';
-  if (uniqueExerciseCount === 1) {
-    patternLabel = 'A'.repeat(daySlots.length);
-  } else if (uniqueExerciseCount === 2) {
-    patternLabel = 'ABABAB';
-  } else if (uniqueExerciseCount === 3) {
-    patternLabel = 'ABCABC';
-  } else if (uniqueExerciseCount === 4) {
-    patternLabel = 'AABBCCDD';
-  } else {
-    // For other counts, repeat the base pattern
-    patternLabel = basePattern.repeat(patternRepeats > 0 ? patternRepeats : 1);
-  }
+  uniqueExerciseIds.forEach((exerciseId, idx) => {
+    exerciseIdToLetter.set(exerciseId, letters[idx] || '?');
+    const count = daySlots.filter(slot => slot.exerciseId === exerciseId).length;
+    exerciseRepCount.set(exerciseId, count);
+  });
+  
+  // Format as "Ax4, Bx3" etc.
+  const patternLabel = uniqueExerciseIds
+    .map((exerciseId) => {
+      const letter = exerciseIdToLetter.get(exerciseId) || '?';
+      const count = exerciseRepCount.get(exerciseId) || 0;
+      return `${letter}x${count}`;
+    })
+    .join(', ');
+
+  const swapCandidates = showExerciseSelector ? getSwapCandidates() : [];
 
   return (
     <ThemedView style={styles.container}>
@@ -198,7 +267,7 @@ export default function DayFlowScreen() {
                 Day Overview
               </ThemedText>
               <ThemedText style={styles.summaryText}>
-                {uniqueExerciseCount} exercise{uniqueExerciseCount > 1 ? 's' : ''} • {dayTotalMinutes} minutes total
+                {uniqueExerciseCount} exercise{uniqueExerciseCount > 1 ? 's' : ''} • {dayTotalMinutes} min total
               </ThemedText>
               <ThemedText style={styles.summaryFormat}>
                 Format: {patternLabel}
@@ -313,20 +382,25 @@ export default function DayFlowScreen() {
         onRequestClose={() => setShowExerciseSelector(false)}
       >
         <ThemedView style={styles.modalContainer}>
-          <View style={styles.modalContent}>
+          <ThemedView style={styles.modalContent} lightColor="#fff" darkColor="#111">
             <View style={styles.modalHeader}>
-              <ThemedText type="subtitle">Select Replacement Exercise</ThemedText>
+              <View style={{ flex: 1 }}>
+                <ThemedText type="subtitle">Select Replacement Exercise</ThemedText>
+                <ThemedText style={styles.modalSubtext}>
+                  {swapCandidates.length} option{swapCandidates.length === 1 ? '' : 's'}
+                </ThemedText>
+              </View>
               <TouchableOpacity onPress={() => setShowExerciseSelector(false)}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalScroll}>
-              {getSwapCandidates().length === 0 ? (
+              {swapCandidates.length === 0 ? (
                 <ThemedText style={styles.noCandidates}>
                   No suitable replacement exercises found.
                 </ThemedText>
               ) : (
-                getSwapCandidates().map((exercise) => (
+                swapCandidates.map((exercise) => (
                   <TouchableOpacity
                     key={exercise.id}
                     onPress={() => handleSelectReplacement(exercise)}
@@ -337,7 +411,7 @@ export default function DayFlowScreen() {
                 ))
               )}
             </ScrollView>
-          </View>
+          </ThemedView>
         </ThemedView>
       </Modal>
     </ThemedView>
@@ -478,7 +552,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '80%',
+    height: '80%',
+    minHeight: 260,
     padding: 20,
   },
   modalHeader: {
@@ -486,6 +561,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  modalSubtext: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginTop: 2,
   },
   modalScroll: {
     flex: 1,

@@ -310,6 +310,98 @@ export const storageService = {
     }
   },
 
+  /**
+   * Delete a routine and any week plans created from it (plans with plan.routineId === routineId).
+   * This keeps Calendar/Home consistent when a routine is removed.
+   */
+  async deleteRoutineCascade(
+    routineId: string
+  ): Promise<{ removedWeekPlanIds: string[]; remainingWeekPlans: WeekPlan[] }> {
+    try {
+      // Delete routine itself
+      await this.deleteRoutine(routineId);
+
+      // Remove associated week plans (calendar schedules) for that routine
+      const plans = await this.getWeekPlans();
+      // Some older plans may not have routineId populated, but still follow the id format:
+      // `plan-routine-${routine.id}-${timestamp}`
+      const routinePlanIdPrefix = `plan-routine-${routineId}-`;
+      const removed = plans.filter(
+        (p) => p.routineId === routineId || p.id.startsWith(routinePlanIdPrefix)
+      );
+      const remaining = plans.filter(
+        (p) => p.routineId !== routineId && !p.id.startsWith(routinePlanIdPrefix)
+      );
+
+      if (removed.length > 0) {
+        await AsyncStorage.setItem(STORAGE_KEYS.WEEK_PLANS, JSON.stringify(remaining));
+
+        // If the active plan was removed, clear it
+        const activePlanId = await AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_WEEK_PLAN);
+        if (activePlanId && removed.some((p) => p.id === activePlanId)) {
+          await AsyncStorage.removeItem(STORAGE_KEYS.ACTIVE_WEEK_PLAN);
+        }
+      }
+
+      return { removedWeekPlanIds: removed.map((p) => p.id), remainingWeekPlans: remaining };
+    } catch (error) {
+      console.error('Error deleting routine cascade:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Remove any week plans that reference routines that no longer exist.
+   * This prevents "ghost" calendar schedules after routines are deleted or data gets out of sync.
+   */
+  async cleanupOrphanWeekPlans(): Promise<WeekPlan[]> {
+    try {
+      const routines = await this.getRoutines();
+      const routineIds = new Set(routines.map((r) => r.id));
+
+      const plans = await this.getWeekPlans();
+      const isOrphan = (plan: WeekPlan) => {
+        if (plan.routineId) {
+          return !routineIds.has(plan.routineId);
+        }
+
+        // Heuristic for older routine-based plans missing routineId
+        if (plan.id.startsWith('plan-routine-')) {
+          const parts = plan.id.split('-');
+          // id looks like: plan-routine-<routineId>-<timestamp>
+          // routineId itself contains hyphens, so recover by stripping prefix + last segment
+          const prefix = 'plan-routine-';
+          const withoutPrefix = plan.id.slice(prefix.length); // <routineId>-<timestamp>
+          const lastDash = withoutPrefix.lastIndexOf('-');
+          if (lastDash > 0) {
+            const inferredRoutineId = withoutPrefix.slice(0, lastDash);
+            return !routineIds.has(inferredRoutineId);
+          }
+        }
+
+        return false;
+      };
+
+      const remaining = plans.filter((p) => !isOrphan(p));
+
+      if (remaining.length !== plans.length) {
+        await AsyncStorage.setItem(STORAGE_KEYS.WEEK_PLANS, JSON.stringify(remaining));
+
+        // Clear active week plan if it no longer exists
+        const activePlanId = await AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_WEEK_PLAN);
+        if (activePlanId && !remaining.some((p) => p.id === activePlanId)) {
+          await AsyncStorage.removeItem(STORAGE_KEYS.ACTIVE_WEEK_PLAN);
+        }
+      }
+
+      return remaining;
+    } catch (error) {
+      console.error('Error cleaning up orphan week plans:', error);
+      // If cleanup fails, fall back to current state
+      return await this.getWeekPlans();
+    }
+  },
+
   // Clear all data (useful for development/reset)
   async clearAll(): Promise<void> {
     try {

@@ -8,8 +8,9 @@ import { useRoutines } from '@/hooks/useRoutines';
 import { useWeekPlans } from '@/hooks/useWeekPlans';
 import { ScheduledSession, WeekPlan } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, FlatList, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function CalendarScreen() {
@@ -20,9 +21,16 @@ export default function CalendarScreen() {
     loading: planLoading,
     updateWeekPlan,
     deleteWeekPlan,
+    reloadActivePlan,
   } = useWeekPlans();
   const { routines, activeRoutine } = useRoutines();
   const { rescheduleAllNotifications } = useNotifications();
+
+  useFocusEffect(
+    useCallback(() => {
+      reloadActivePlan();
+    }, [reloadActivePlan])
+  );
 
   // Get today's date in local timezone (YYYY-MM-DD format)
   const getTodayDateString = (): string => {

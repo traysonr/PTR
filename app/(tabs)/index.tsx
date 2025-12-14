@@ -1,24 +1,116 @@
 import { Button } from '@/components/Button';
-import { ExerciseCard } from '@/components/ExerciseCard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useExercises } from '@/hooks/useExercises';
 import { useProfile } from '@/hooks/useProfile';
 import { useRoutines } from '@/hooks/useRoutines';
-import { useScheduledExercises } from '@/hooks/useScheduledExercises';
 import { useWeekPlans } from '@/hooks/useWeekPlans';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+
+// Helper function to estimate exercise minutes from timeToComplete
+function estimateExerciseMinutes(exercise: any): number {
+  if (exercise?.timeToComplete) {
+    const match = exercise.timeToComplete.match(/(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      // If range like "3–5 minutes", take the average; otherwise use the number
+      const rangeMatch = exercise.timeToComplete.match(/(\d+)[–-](\d+)/);
+      if (rangeMatch) {
+        const min = parseInt(rangeMatch[1], 10);
+        const max = parseInt(rangeMatch[2], 10);
+        return Math.round((min + max) / 2);
+      }
+      return num;
+    }
+  }
+  // Default fallback: 3 minutes per exercise
+  return 3;
+}
 
 export default function HomeScreen() {
   const { profile, loading: profileLoading } = useProfile();
-  const { activeRoutine, isLoading: routinesLoading } = useRoutines();
-  const { activePlan, loading: planLoading } = useWeekPlans();
-  const { getTodaySessions, getWeeklyOverview } = useScheduledExercises();
+  const { activeRoutine, isLoading: routinesLoading, reloadRoutines } = useRoutines();
+  const { weekPlans, activePlan, loading: planLoading, reloadActivePlan } = useWeekPlans();
+  const { getExerciseById } = useExercises();
 
-  const todaySessions = getTodaySessions() || [];
-  const weeklyOverview = getWeeklyOverview() || [];
+  useFocusEffect(
+    useCallback(() => {
+      reloadRoutines();
+      reloadActivePlan();
+    }, [reloadRoutines, reloadActivePlan])
+  );
+
+  // Get today's date string
+  const getTodayDateString = (): string => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Get today's sessions from all week plans
+  const todaySessions = useMemo(() => {
+    const todayString = getTodayDateString();
+    const sessions: Array<{ session: { id: string; exerciseId: string; date: string; createdAt: string }; exercise: any }> = [];
+    
+    weekPlans.forEach((plan) => {
+      plan.scheduledSessions
+        .filter((session) => session.date === todayString)
+        .forEach((session) => {
+          const exercise = getExerciseById(session.exerciseId);
+          if (exercise) {
+            sessions.push({ session, exercise });
+          }
+        });
+    });
+    
+    return sessions;
+  }, [weekPlans, getExerciseById]);
+
+  // Get weekly overview from week plans
+  const weeklyOverview = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const overview: Array<{ date: string; totalMinutes: number }> = [];
+    
+    for (let weekOffset = 0; weekOffset < 3; weekOffset++) {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() + weekOffset * 7);
+      weekStart.setHours(0, 0, 0, 0);
+      
+      for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+        const date = new Date(weekStart);
+        date.setDate(weekStart.getDate() + dayOffset);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
+        
+        let totalMinutes = 0;
+        weekPlans.forEach((plan) => {
+          plan.scheduledSessions
+            .filter((session) => session.date === dateString)
+            .forEach((session) => {
+              const exercise = getExerciseById(session.exerciseId);
+              if (exercise) {
+                totalMinutes += estimateExerciseMinutes(exercise);
+              }
+            });
+        });
+        
+        if (totalMinutes > 0) {
+          overview.push({ date: dateString, totalMinutes });
+        }
+      }
+    }
+    
+    return overview;
+  }, [weekPlans, getExerciseById]);
 
   if (profileLoading || routinesLoading || planLoading) {
     return (
@@ -195,13 +287,55 @@ export default function HomeScreen() {
           <ThemedText type="subtitle" style={styles.sectionTitle}>
             Today's Plan
           </ThemedText>
-          {todaySessions.length > 0 ? (
-            <View style={styles.exercisesList}>
-              {todaySessions.map(({ exercise, session }) => (
-                <ExerciseCard key={session.id} exercise={exercise} showDescription={false} />
-              ))}
-            </View>
-          ) : (
+          {todaySessions.length > 0 ? (() => {
+            // Get unique exercises in the order they first appear
+            const uniqueExercises: Array<{ exercise: any; letter: string }> = [];
+            const seenIds = new Set<string>();
+            const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+            
+            todaySessions.forEach(({ exercise }) => {
+              if (!seenIds.has(exercise.id)) {
+                seenIds.add(exercise.id);
+                uniqueExercises.push({
+                  exercise,
+                  letter: letters[uniqueExercises.length] || '?',
+                });
+              }
+            });
+
+            const count = uniqueExercises.length;
+            
+            // Determine pattern label
+            let patternLabel = '';
+            if (count === 1) {
+              patternLabel = 'A'.repeat(todaySessions.length);
+            } else if (count === 2) {
+              patternLabel = 'ABABAB';
+            } else if (count === 3) {
+              patternLabel = 'ABCABC';
+            } else if (count === 4) {
+              patternLabel = 'AABBCCDD';
+            } else {
+              const basePattern = letters.slice(0, count).join('');
+              const patternRepeats = Math.floor(todaySessions.length / count);
+              patternLabel = basePattern.repeat(patternRepeats > 0 ? patternRepeats : 1);
+            }
+
+            return (
+              <View>
+                <ThemedText style={styles.summaryHeadline}>
+                  {count} exercise{count > 1 ? 's' : ''} in an {patternLabel} format:
+                </ThemedText>
+                <View style={styles.exerciseSummaryList}>
+                  {uniqueExercises.map(({ exercise, letter }) => (
+                    <ThemedText key={exercise.id} style={styles.exerciseSummaryItem}>
+                      ({letter}) {exercise.name}
+                    </ThemedText>
+                  ))}
+                </View>
+              </View>
+            );
+          })() : (
             <ThemedView style={styles.emptyState}>
               <ThemedText style={styles.emptyText}>No exercises scheduled for today.</ThemedText>
               <Button
@@ -225,7 +359,7 @@ export default function HomeScreen() {
                 <View key={day.date} style={styles.weeklyItem}>
                   <ThemedText style={styles.weeklyDate}>{formatDate(day.date)}</ThemedText>
                   <ThemedText style={styles.weeklyCount}>
-                    {day.exercises.length} {day.exercises.length === 1 ? 'exercise' : 'exercises'}
+                    {day.totalMinutes} min
                   </ThemedText>
                 </View>
               ))}
@@ -351,6 +485,19 @@ const styles = StyleSheet.create({
   },
   exercisesList: {
     gap: 12,
+  },
+  summaryHeadline: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    opacity: 0.8,
+  },
+  exerciseSummaryList: {
+    gap: 8,
+  },
+  exerciseSummaryItem: {
+    fontSize: 16,
+    marginLeft: 8,
   },
   weeklyList: {
     gap: 12,

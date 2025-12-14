@@ -4,17 +4,24 @@ import { ThemedView } from '@/components/themed-view';
 import { useProfile } from '@/hooks/useProfile';
 import { useRoutines } from '@/hooks/useRoutines';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function RoutinesScreen() {
-  const { routines, activeRoutine, isLoading, createRoutineFromProfile, setActiveRoutine } =
+  const { routines, activeRoutine, isLoading, createRoutineFromProfile, setActiveRoutine, reloadRoutines } =
     useRoutines();
   const { profile } = useProfile();
   const [generating, setGenerating] = useState(false);
 
-  const handleGenerateRoutine = async () => {
+  useFocusEffect(
+    useCallback(() => {
+      reloadRoutines();
+    }, [reloadRoutines])
+  );
+
+  const handleCreateFromProfile = async () => {
     if (!profile) {
       Alert.alert('Profile Required', 'Please create a profile first.');
       router.push('/(tabs)/profile');
@@ -31,6 +38,10 @@ export default function RoutinesScreen() {
     } finally {
       setGenerating(false);
     }
+  };
+
+  const handleCreateCustom = () => {
+    router.push('/routines/new');
   };
 
   if (isLoading) {
@@ -52,12 +63,20 @@ export default function RoutinesScreen() {
             Create your first routine to get started. We'll generate a personalized 7-day routine
             based on your profile preferences.
           </ThemedText>
-          <Button
-            title="Generate Your First Routine"
-            onPress={handleGenerateRoutine}
-            loading={generating}
-            style={styles.generateButton}
-          />
+          <View style={styles.buttonGroup}>
+            <Button
+              title="New Routine (Use My Profile)"
+              onPress={handleCreateFromProfile}
+              loading={generating}
+              style={styles.generateButton}
+            />
+            <Button
+              title="New Routine (Custom Settings)"
+              onPress={handleCreateCustom}
+              variant="outline"
+              style={styles.generateButton}
+            />
+          </View>
         </ScrollView>
       </ThemedView>
     );
@@ -70,10 +89,17 @@ export default function RoutinesScreen() {
           <ThemedText type="title" style={styles.title}>
             Routines
           </ThemedText>
+        </View>
+        <View style={styles.buttonGroup}>
           <Button
-            title="New Routine"
-            onPress={handleGenerateRoutine}
+            title="New Routine (Use My Profile)"
+            onPress={handleCreateFromProfile}
             loading={generating}
+            style={styles.newButton}
+          />
+          <Button
+            title="New Routine (Custom Settings)"
+            onPress={handleCreateCustom}
             variant="outline"
             style={styles.newButton}
           />
@@ -170,7 +196,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
   },
   newButton: {
-    minWidth: 120,
+    flex: 1,
+    marginBottom: 8,
+  },
+  buttonGroup: {
+    gap: 12,
+    marginBottom: 24,
   },
   emptyTitle: {
     marginBottom: 16,

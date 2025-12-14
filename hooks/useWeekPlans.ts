@@ -18,7 +18,8 @@ export function useWeekPlans() {
     try {
       setLoading(true);
       setError(null);
-      const plans = await storageService.getWeekPlans();
+      // Clean up any orphan plans (routine deleted but plan still exists)
+      const plans = await storageService.cleanupOrphanWeekPlans();
       const active = await storageService.getActiveWeekPlan();
       setWeekPlans(plans);
       setActivePlan(active);

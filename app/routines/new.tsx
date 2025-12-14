@@ -1,11 +1,8 @@
 import { Button } from '@/components/Button';
 import { Checkbox } from '@/components/Checkbox';
-import { TextInput } from '@/components/TextInput';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useProfile } from '@/hooks/useProfile';
-import { useRoutines } from '@/hooks/useRoutines';
-import { storageService } from '@/services/storage';
+import { RoutineProfileInput, useRoutines } from '@/hooks/useRoutines';
 import { BodyArea, Equipment, Intensity } from '@/types/exercise';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
@@ -26,7 +23,7 @@ const BODY_AREAS: BodyArea[] = [
 
 const INTENSITIES: Intensity[] = ['low', 'medium', 'high'];
 
-// Equipment options for profile (excludes 'none' - bodyweight exercises are always available)
+// Equipment options for routine (excludes 'none' - bodyweight exercises are always available)
 const EQUIPMENT: Equipment[] = [
   'dumbbells',
   'exercise_ball',
@@ -68,17 +65,15 @@ const equipmentLabels: Record<Equipment, string> = {
   foam_roll: 'Foam Roll',
 };
 
-export default function OnboardingScreen() {
+export default function NewRoutineScreen() {
   const [step, setStep] = useState(1);
-  const [name, setName] = useState('');
   const [targetBodyAreas, setTargetBodyAreas] = useState<BodyArea[]>([]);
   const [intensity, setIntensity] = useState<Intensity | null>(null);
   const [equipmentAccess, setEquipmentAccess] = useState<Equipment[]>([]);
   const [daysPerWeek, setDaysPerWeek] = useState<number | null>(null);
   const [maxMinutesPerDay, setMaxMinutesPerDay] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const { saveProfile } = useProfile();
-  const { createRoutineFromProfile } = useRoutines();
+  const { createRoutineFromCustomInput } = useRoutines();
 
   const toggleBodyArea = (area: BodyArea) => {
     setTargetBodyAreas((prev) =>
@@ -95,23 +90,19 @@ export default function OnboardingScreen() {
   };
 
   const validateStep = (currentStep: number): boolean => {
-    if (currentStep === 1 && !name.trim()) {
-      Alert.alert('Name Required', 'Please enter your name or nickname.');
-      return false;
-    }
-    if (currentStep === 2 && targetBodyAreas.length === 0) {
+    if (currentStep === 1 && targetBodyAreas.length === 0) {
       Alert.alert('Selection Required', 'Please select at least one target body area.');
       return false;
     }
-    if (currentStep === 3 && !intensity) {
+    if (currentStep === 2 && !intensity) {
       Alert.alert('Selection Required', 'Please select an intensity level.');
       return false;
     }
-    if (currentStep === 4 && equipmentAccess.length === 0) {
+    if (currentStep === 3 && equipmentAccess.length === 0) {
       Alert.alert('Selection Required', 'Please select at least one equipment option. Bodyweight exercises are always available.');
       return false;
     }
-    if (currentStep === 5 && (!daysPerWeek || !maxMinutesPerDay)) {
+    if (currentStep === 4 && (!daysPerWeek || !maxMinutesPerDay)) {
       Alert.alert('Selection Required', 'Please select both days per week and minutes per day.');
       return false;
     }
@@ -123,7 +114,7 @@ export default function OnboardingScreen() {
       return;
     }
 
-    if (step < 5) {
+    if (step < 4) {
       setStep(step + 1);
     } else {
       handleComplete();
@@ -131,49 +122,25 @@ export default function OnboardingScreen() {
   };
 
   const handleComplete = async () => {
-    if (!validateStep(5)) {
+    if (!validateStep(4)) {
       return;
     }
 
     setLoading(true);
     try {
-      const now = new Date().toISOString();
-      
-      const profile = {
-        id: 'default',
-        name: name.trim(),
+      const input: RoutineProfileInput = {
         targetBodyAreas,
         intensity: intensity!,
-        equipmentAccess, // Does not include 'none' - bodyweight exercises are always available
+        equipmentAccess,
         daysPerWeek: daysPerWeek!,
         maxMinutesPerDay: maxMinutesPerDay!,
         maxMinutesPerWeek: daysPerWeek! * maxMinutesPerDay!,
-        createdAt: now,
-        updatedAt: now,
       };
 
-      const success = await saveProfile(profile);
-      if (success) {
-        await storageService.setOnboardingComplete(true);
-        
-        // Auto-generate routine from profile
-        try {
-          const routine = await createRoutineFromProfile(profile);
-          // Navigate to routines tab to review the generated routine
-          router.replace('/(tabs)/routines');
-        } catch (routineError) {
-          console.error('Error creating routine:', routineError);
-          Alert.alert(
-            'Routine Creation Error',
-            'Profile saved, but routine generation failed. You can generate a routine later from the Routines tab.'
-          );
-          router.replace('/(tabs)/routines');
-        }
-      } else {
-        Alert.alert('Error', 'Failed to save profile. Please try again.');
-      }
+      const routine = await createRoutineFromCustomInput(input);
+      router.replace(`/routines/${routine.id}`);
     } catch (error) {
-      Alert.alert('Error', 'An error occurred. Please try again.');
+      Alert.alert('Error', 'Failed to create routine. Please try again.');
       console.error(error);
     } finally {
       setLoading(false);
@@ -184,35 +151,20 @@ export default function OnboardingScreen() {
     <ThemedView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <ThemedText type="title" style={styles.title}>
-          Welcome to PTR
+          New Routine – Custom Settings
         </ThemedText>
         <ThemedText style={styles.subtitle}>
-          Let's create your personalized physical therapy routine.
+          Configure settings for this routine. This won't change your main profile.
         </ThemedText>
 
-        {/* Step 1: Name */}
+        {/* Step 1: Target Body Areas */}
         {step === 1 && (
-          <ThemedView style={styles.step}>
-            <ThemedText type="subtitle" style={styles.stepTitle}>
-              What's your name?
-            </ThemedText>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Enter your name or nickname"
-              label="Name / Nickname"
-            />
-          </ThemedView>
-        )}
-
-        {/* Step 2: Target Body Areas */}
-        {step === 2 && (
           <ThemedView style={styles.step}>
             <ThemedText type="subtitle" style={styles.stepTitle}>
               Target Body Areas
             </ThemedText>
             <ThemedText style={styles.stepDescription}>
-              Select all body areas you want to focus on. We recommend emphasizing: Neck, Upper Back, Lower Back, Hip, Shoulder, Core, Knee.
+              Select all body areas you want to focus on for this routine.
             </ThemedText>
             {BODY_AREAS.map((area) => (
               <Checkbox
@@ -225,14 +177,14 @@ export default function OnboardingScreen() {
           </ThemedView>
         )}
 
-        {/* Step 3: Intensity Level */}
-        {step === 3 && (
+        {/* Step 2: Intensity Level */}
+        {step === 2 && (
           <ThemedView style={styles.step}>
             <ThemedText type="subtitle" style={styles.stepTitle}>
               Select Intensity Level
             </ThemedText>
             <ThemedText style={styles.stepDescription}>
-              Choose your preferred intensity level. The app will prioritize exercises at this level.
+              Choose your preferred intensity level for this routine.
             </ThemedText>
             {INTENSITIES.map((intensityOption) => (
               <Checkbox
@@ -250,8 +202,8 @@ export default function OnboardingScreen() {
           </ThemedView>
         )}
 
-        {/* Step 4: Equipment Access */}
-        {step === 4 && (
+        {/* Step 3: Equipment Access */}
+        {step === 3 && (
           <ThemedView style={styles.step}>
             <ThemedText type="subtitle" style={styles.stepTitle}>
               Equipment Access
@@ -270,8 +222,8 @@ export default function OnboardingScreen() {
           </ThemedView>
         )}
 
-        {/* Step 5: Time Availability */}
-        {step === 5 && (
+        {/* Step 4: Time Availability */}
+        {step === 4 && (
           <ThemedView style={styles.step}>
             <ThemedText type="subtitle" style={styles.stepTitle}>
               Time Availability
@@ -321,7 +273,7 @@ export default function OnboardingScreen() {
             />
           )}
           <Button
-            title={step === 5 ? 'Complete Setup' : 'Next'}
+            title={step === 4 ? 'Create Routine' : 'Next'}
             onPress={handleNext}
             loading={loading}
             style={styles.nextButton}
@@ -329,7 +281,7 @@ export default function OnboardingScreen() {
         </ThemedView>
 
         <ThemedView style={styles.progressContainer}>
-          {[1, 2, 3, 4, 5].map((s) => (
+          {[1, 2, 3, 4].map((s) => (
             <ThemedView
               key={s}
               style={[styles.progressDot, s <= step && styles.progressDotActive]}
@@ -414,3 +366,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
   },
 });
+

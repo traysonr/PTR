@@ -2,15 +2,14 @@
 // Note: BodyPart, Goal (old profile goal), Intensity (old profile intensity) are deprecated
 // New profile uses BodyArea, ExerciseGoal, ExerciseIntensity from exercise.ts
 
-import { BodyArea, Intensity, Equipment } from './exercise';
+import { BodyArea, Equipment, Intensity } from './exercise';
 
 export interface UserProfile {
   id: string; // e.g. 'default'
   name: string;
   targetBodyAreas: BodyArea[]; // Use BodyArea from exercise types
-  intensityMin: Intensity; // 'low' | 'medium' | 'high'
-  intensityMax: Intensity;
-  equipmentAccess: Equipment[]; // subset of the Exercise equipment union
+  intensity: Intensity; // single level: 'low' | 'medium' | 'high'
+  equipmentAccess: Equipment[]; // subset of the Exercise equipment union (does not include 'none')
   daysPerWeek: number; // e.g. 2–7
   maxMinutesPerDay: number; // e.g. 20, 30, 45
   maxMinutesPerWeek?: number; // optional, default = daysPerWeek * maxMinutesPerDay
@@ -19,7 +18,7 @@ export interface UserProfile {
 }
 
 // Exercise Types - Re-export from exercise.ts
-export { Exercise, BodyArea, Intensity as ExerciseIntensity, Goal as ExerciseGoal, Equipment } from './exercise';
+export { BodyArea, Equipment, Exercise, Goal as ExerciseGoal, Intensity as ExerciseIntensity } from './exercise';
 
 // Routine Types - Re-export from routine.ts
 export { Routine, RoutineExerciseSlot } from './routine';

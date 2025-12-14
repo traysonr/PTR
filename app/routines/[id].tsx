@@ -5,17 +5,19 @@ import { useExercises } from '@/hooks/useExercises';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRoutines } from '@/hooks/useRoutines';
 import { useWeekPlans } from '@/hooks/useWeekPlans';
+import { storageService } from '@/services/storage';
 import { RoutineExerciseSlot } from '@/types';
 import { Exercise } from '@/types/exercise';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function RoutineDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { routines, saveRoutine, isLoading } = useRoutines();
+  const { routines, saveRoutine, deleteRoutine, reloadRoutines, isLoading } = useRoutines();
   const { allExercises, getExerciseById } = useExercises();
   const { createWeekPlanFromRoutine, weekPlans } = useWeekPlans();
   const { rescheduleAllNotifications } = useNotifications();
@@ -31,10 +33,33 @@ export default function RoutineDetailScreen() {
     }
   }, [id, routines]);
 
-  if (!routine || isLoading) {
+  // Ensure we refresh routine data when returning from Day screens (swap/edit updates)
+  useFocusEffect(
+    useCallback(() => {
+      reloadRoutines();
+    }, [reloadRoutines])
+  );
+
+  if (isLoading) {
     return (
       <ThemedView style={styles.container}>
         <ThemedText>Loading routine...</ThemedText>
+      </ThemedView>
+    );
+  }
+
+  if (!routine) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={{ padding: 20 }}>
+          <ThemedText type="title" style={{ marginBottom: 12 }}>
+            Routine not found
+          </ThemedText>
+          <ThemedText style={{ opacity: 0.7, marginBottom: 16 }}>
+            This routine may have been deleted.
+          </ThemedText>
+          <Button title="Back to Routines" onPress={() => router.replace('/(tabs)/routines')} />
+        </View>
       </ThemedView>
     );
   }
@@ -166,6 +191,37 @@ export default function RoutineDetailScreen() {
     }
   };
 
+  const handleDeleteRoutine = () => {
+    Alert.alert(
+      'Delete Routine',
+      'Are you sure you want to delete this routine? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteRoutine(routine.id);
+
+              // Immediately reschedule notifications based on remaining sessions
+              // (deleteRoutine cascades to remove week plans for this routine in storage)
+              const remainingPlans = await storageService.getWeekPlans();
+              await rescheduleAllNotifications(
+                remainingPlans.flatMap((plan) => plan.scheduledSessions)
+              );
+
+              router.replace('/(tabs)/routines');
+            } catch (error) {
+              console.error('Error deleting routine:', error);
+              Alert.alert('Error', 'Failed to delete routine. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const getSlotsByDay = (dayIndex: number): RoutineExerciseSlot[] => {
     return routine.slots
       .filter((s) => s.dayIndex === dayIndex)
@@ -209,28 +265,9 @@ export default function RoutineDetailScreen() {
 
     const count = uniqueExerciseIds.length;
     const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
-    
-    // Calculate how many times the pattern repeats
-    const patternRepeats = count > 0 ? Math.floor(daySlots.length / count) : 0;
-    
-    // Build pattern string (e.g., "ABC" for 3 exercises)
-    const basePattern = letters.slice(0, count).join('');
-    
-    let patternLabel = '';
-    if (count === 1) {
-      patternLabel = 'A'.repeat(daySlots.length);
-    } else if (count === 2) {
-      patternLabel = 'ABABAB';
-    } else if (count === 3) {
-      patternLabel = 'ABCABC';
-    } else if (count === 4) {
-      patternLabel = 'AABBCCDD';
-    } else {
-      // For other counts, repeat the base pattern
-      patternLabel = basePattern.repeat(patternRepeats > 0 ? patternRepeats : 1);
-    }
 
-    const headline = `${count} exercise${count > 1 ? 's' : ''} in an ${patternLabel} format:`;
+    // Simplified headline: just exercise count and total minutes
+    const headline = `${count} exercise${count > 1 ? 's' : ''} • ${dayTotalMinutes} min`;
 
     const lines = uniqueExerciseIds.map((id, idx) => {
       const exercise = getExerciseById(id);
@@ -253,6 +290,13 @@ export default function RoutineDetailScreen() {
             {routine.name}
           </ThemedText>
           <ThemedText style={styles.description}>{routine.description}</ThemedText>
+          <TouchableOpacity
+            onPress={handleDeleteRoutine}
+            style={styles.deleteButton}
+          >
+            <Ionicons name="trash-outline" size={18} color="#d9534f" />
+            <ThemedText style={styles.deleteButtonText}>Delete Routine</ThemedText>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.summary}>
@@ -358,13 +402,16 @@ export default function RoutineDetailScreen() {
             </TouchableOpacity>
           );
         })}
+      </ScrollView>
 
+      {/* Floating Confirm Button */}
+      <View style={styles.floatingButtonContainer}>
         <Button
           title="Confirm & Set Start Date"
           onPress={handleConfirmAndStart}
-          style={styles.confirmButton}
+          style={styles.floatingButton}
         />
-      </ScrollView>
+      </View>
 
       {/* Date Picker Modal */}
       {showDatePicker && (
@@ -430,6 +477,7 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingTop: 20,
+    paddingBottom: 100, // Add padding at bottom for floating button
   },
   header: {
     marginBottom: 24,
@@ -563,6 +611,42 @@ const styles = StyleSheet.create({
   confirmButton: {
     marginTop: 24,
     marginBottom: 40,
+  },
+  floatingButtonContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 20,
+    paddingBottom: 20,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  floatingButton: {
+    width: '100%',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d9534f',
+  },
+  deleteButtonText: {
+    color: '#d9534f',
+    fontSize: 14,
+    fontWeight: '600',
   },
   datePickerModal: {
     flex: 1,
